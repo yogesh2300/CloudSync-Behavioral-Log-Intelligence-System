@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual Environment
+.venv/
+venv/
+
+# Environment Variables
+.env
+.env.*
+
+# VS Code
+.vscode/
+
+# Node
+node_modules/
+
+# React
+dist/
+build/
+
+# Logs
+*.log
+
+# Pytest
+.pytest_cache/
+
+# Cursor
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
