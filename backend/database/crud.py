@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Iterable, Mapping
 
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, func, delete
 from sqlalchemy.orm import Session
 
 from backend.database.models import SecurityEvent
@@ -74,6 +74,134 @@ def get_events_by_username(
         .limit(limit)
     )
     return list(session.scalars(stmt).all())
+
+def get_event_by_id(session: Session, event_id: str) -> SecurityEvent | None:
+    """Return a security event by its unique event_id."""
+    stmt = select(SecurityEvent).where(SecurityEvent.event_id == event_id)
+    return session.scalar(stmt)
+
+
+def get_events_by_ip(
+    session: Session,
+    ip: str,
+    *,
+    limit: int = 100,
+) -> list[SecurityEvent]:
+    """Return events originating from the given IP address."""
+    stmt = (
+        select(SecurityEvent)
+        .where(SecurityEvent.source_ip == ip)
+        .order_by(desc(SecurityEvent.timestamp), desc(SecurityEvent.id))
+        .limit(limit)
+    )
+    return list(session.scalars(stmt).all())
+
+
+def get_events_by_type(
+    session: Session,
+    event_type: str,
+    *,
+    limit: int = 100,
+) -> list[SecurityEvent]:
+    """Return events of a specific event type."""
+    stmt = (
+        select(SecurityEvent)
+        .where(SecurityEvent.event_type == event_type)
+        .order_by(desc(SecurityEvent.timestamp), desc(SecurityEvent.id))
+        .limit(limit)
+    )
+    return list(session.scalars(stmt).all())
+
+
+def get_events_by_hostname(
+    session: Session,
+    hostname: str,
+    *,
+    limit: int = 100,
+) -> list[SecurityEvent]:
+    """Return events for a specific hostname."""
+    stmt = (
+        select(SecurityEvent)
+        .where(SecurityEvent.hostname == hostname)
+        .order_by(desc(SecurityEvent.timestamp), desc(SecurityEvent.id))
+        .limit(limit)
+    )
+    return list(session.scalars(stmt).all())
+
+
+def count_events(session: Session) -> int:
+    """Return total number of security events."""
+    stmt = select(func.count()).select_from(SecurityEvent)
+    return session.scalar(stmt) or 0
+
+
+def count_high_risk_events(
+    session: Session,
+    min_score: int = 70,
+) -> int:
+    """Return number of high-risk security events."""
+    stmt = (
+        select(func.count())
+        .select_from(SecurityEvent)
+        .where(SecurityEvent.risk_score >= min_score)
+    )
+    return session.scalar(stmt) or 0
+
+
+def count_failed_logins(session: Session) -> int:
+    """Return number of failed login events."""
+    stmt = (
+        select(func.count())
+        .select_from(SecurityEvent)
+        .where(SecurityEvent.event_type == "Failed Login")
+    )
+    return session.scalar(stmt) or 0
+
+
+def count_successful_logins(session: Session) -> int:
+    """Return number of successful login events."""
+    stmt = (
+        select(func.count())
+        .select_from(SecurityEvent)
+        .where(SecurityEvent.event_type == "Successful Login")
+    )
+    return session.scalar(stmt) or 0
+
+
+def count_unique_users(session: Session) -> int:
+    """Return number of unique usernames."""
+    stmt = select(func.count(func.distinct(SecurityEvent.username)))
+    return session.scalar(stmt) or 0
+
+
+def count_unique_ips(session: Session) -> int:
+    """Return number of unique source IPs."""
+    stmt = select(func.count(func.distinct(SecurityEvent.source_ip)))
+    return session.scalar(stmt) or 0
+
+
+def dashboard_summary(session: Session) -> dict[str, int]:
+    """Return summary statistics for the dashboard."""
+    return {
+        "total_events": count_events(session),
+        "high_risk": count_high_risk_events(session),
+        "failed_logins": count_failed_logins(session),
+        "successful_logins": count_successful_logins(session),
+        "unique_users": count_unique_users(session),
+        "unique_ips": count_unique_ips(session),
+    }
+
+
+def delete_old_events(session: Session, days: int) -> int:
+    """Delete events older than the specified number of days."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    stmt = delete(SecurityEvent).where(SecurityEvent.timestamp < cutoff)
+
+    result = session.execute(stmt)
+    session.commit()
+
+    return result.rowcount or 0
 
 
 def _to_model(event: Mapping[str, Any]) -> SecurityEvent:
