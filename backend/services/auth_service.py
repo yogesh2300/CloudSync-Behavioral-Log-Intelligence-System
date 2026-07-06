@@ -11,6 +11,7 @@ from backend.core.exceptions import (
     DatabaseException,
     ValidationException,
 )
+from backend.core.logging import get_logger
 from backend.core.security import (
     create_access_token,
     hash_password,
@@ -22,6 +23,8 @@ from backend.database.crud import (
     get_user_by_username,
 )
 from backend.database.models import User
+
+logger = get_logger(__name__)
 
 
 class AuthService:
@@ -64,19 +67,19 @@ class AuthService:
         password_hash = hash_password(password)
 
         try:
-            return create_user(
+            user = create_user(
                 self.db,
                 username=username,
                 email=email,
-                password_hash=password_hash,
+                password=password_hash,
                 role=role,
-                )
+            )
+            self.db.commit()
+            return user
         except Exception as exc:
-            import traceback
-            print("\n================ REAL DATABASE ERROR ================\n")
-            traceback.print_exc()
-            print("\n=====================================================\n")
-            raise
+            self.db.rollback()
+            logger.exception("Failed to register user: %s", username)
+            raise DatabaseException("Failed to register user.") from exc
 
     def authenticate_user(
         self,
@@ -96,7 +99,7 @@ class AuthService:
 
         if not verify_password(
             password,
-            user.password_hash,
+            user.hashed_password,
         ):
             raise AuthenticationError(
                 "Invalid username or password."

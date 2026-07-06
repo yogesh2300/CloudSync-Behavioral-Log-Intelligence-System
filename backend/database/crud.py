@@ -7,8 +7,9 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Any, Iterable, Mapping
 
-from sqlalchemy import desc, select, func, delete
+from sqlalchemy import ColumnElement, desc, or_, select, func, delete
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 from backend.database.models import SecurityEvent, User
 
@@ -214,6 +215,72 @@ def delete_old_events(session: Session, days: int) -> int:
     return result.rowcount or 0
 
 
+def _event_filter_clauses(
+    *,
+    event_type: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    username: str | None = None,
+    source_ip: str | None = None,
+    hostname: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    search: str | None = None,
+    min_risk_score: int | None = None,
+    max_risk_score: int | None = None,
+) -> list[ColumnElement[bool]]:
+    """Build shared WHERE clauses for SecurityEvent queries."""
+    clauses: list[ColumnElement[bool]] = []
+
+    if event_type:
+        clauses.append(SecurityEvent.event_type == event_type)
+    if severity:
+        clauses.append(SecurityEvent.severity == severity)
+    if category:
+        clauses.append(SecurityEvent.category == category)
+    if username:
+        clauses.append(SecurityEvent.username == username)
+    if source_ip:
+        clauses.append(SecurityEvent.source_ip == source_ip)
+    if hostname:
+        clauses.append(SecurityEvent.hostname == hostname)
+    if start_time:
+        clauses.append(SecurityEvent.timestamp >= start_time)
+    if end_time:
+        clauses.append(SecurityEvent.timestamp <= end_time)
+    if min_risk_score is not None:
+        clauses.append(SecurityEvent.risk_score >= min_risk_score)
+    if max_risk_score is not None:
+        clauses.append(SecurityEvent.risk_score <= max_risk_score)
+    if search:
+        pattern = f"%{search.strip()}%"
+        clauses.append(
+            or_(
+                SecurityEvent.message.ilike(pattern),
+                SecurityEvent.username.ilike(pattern),
+                SecurityEvent.hostname.ilike(pattern),
+                SecurityEvent.source_ip.ilike(pattern),
+                SecurityEvent.process.ilike(pattern),
+                SecurityEvent.event_type.ilike(pattern),
+                SecurityEvent.raw_log.ilike(pattern),
+            )
+        )
+
+    return clauses
+
+
+def _apply_event_filters(stmt: Select[Any], filters: list[ColumnElement[bool]]) -> Select[Any]:
+    """Apply filter clauses to a select statement."""
+    for clause in filters:
+        stmt = stmt.where(clause)
+    return stmt
+def _apply_event_sort(stmt: Select[Any], *, sort_order: str = "newest") -> Select[Any]:
+    """Apply timestamp sort order to a SecurityEvent select statement."""
+    if sort_order == "oldest":
+        return stmt.order_by(SecurityEvent.timestamp.asc(), SecurityEvent.id.asc())
+    return stmt.order_by(desc(SecurityEvent.timestamp), desc(SecurityEvent.id))
+
+
 def query_events(
     session: Session,
     *,
@@ -224,35 +291,103 @@ def query_events(
     category: str | None = None,
     username: str | None = None,
     source_ip: str | None = None,
+    hostname: str | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
+    search: str | None = None,
+    min_risk_score: int | None = None,
+    max_risk_score: int | None = None,
     sort_order: str = "newest",
 ) -> list[SecurityEvent]:
-    """Query, filter, and paginate security events."""
-    stmt = select(SecurityEvent)
-
-    if event_type:
-        stmt = stmt.where(SecurityEvent.event_type == event_type)
-    if severity:
-        stmt = stmt.where(SecurityEvent.severity == severity)
-    if category:
-        stmt = stmt.where(SecurityEvent.category == category)
-    if username:
-        stmt = stmt.where(SecurityEvent.username == username)
-    if source_ip:
-        stmt = stmt.where(SecurityEvent.source_ip == source_ip)
-    if start_time:
-        stmt = stmt.where(SecurityEvent.timestamp >= start_time)
-    if end_time:
-        stmt = stmt.where(SecurityEvent.timestamp <= end_time)
-
-    if sort_order == "oldest":
-        stmt = stmt.order_by(SecurityEvent.timestamp.asc(), SecurityEvent.id.asc())
-    else:
-        stmt = stmt.order_by(desc(SecurityEvent.timestamp), desc(SecurityEvent.id))
-
+    """Query, filter, search, and paginate security events."""
+    filters = _event_filter_clauses(
+        event_type=event_type,
+        severity=severity,
+        category=category,
+        username=username,
+        source_ip=source_ip,
+        hostname=hostname,
+        start_time=start_time,
+        end_time=end_time,
+        search=search,
+        min_risk_score=min_risk_score,
+        max_risk_score=max_risk_score,
+    )
+    stmt = _apply_event_filters(select(SecurityEvent), filters)
+    stmt = _apply_event_sort(stmt, sort_order=sort_order)
     stmt = stmt.offset(offset).limit(limit)
     return list(session.scalars(stmt).all())
+
+
+def count_query_events(
+    session: Session,
+    *,
+    event_type: str | None = None,
+    severity: str | None = None,
+    category: str | None = None,
+    username: str | None = None,
+    source_ip: str | None = None,
+    hostname: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    search: str | None = None,
+    min_risk_score: int | None = None,
+    max_risk_score: int | None = None,
+) -> int:
+    """Return the total number of security events matching filter criteria."""
+    filters = _event_filter_clauses(
+        event_type=event_type,
+        severity=severity,
+        category=category,
+        username=username,
+        source_ip=source_ip,
+        hostname=hostname,
+        start_time=start_time,
+        end_time=end_time,
+        search=search,
+        min_risk_score=min_risk_score,
+        max_risk_score=max_risk_score,
+    )
+    stmt = _apply_event_filters(select(func.count()).select_from(SecurityEvent), filters)
+    return session.scalar(stmt) or 0
+
+
+def update_event(
+    session: Session,
+    event_id: str,
+    updates: Mapping[str, Any],
+) -> SecurityEvent | None:
+    """Update mutable fields on an existing security event."""
+    record = get_event_by_id(session, event_id)
+    if record is None:
+        return None
+
+    allowed_fields = {
+        "severity",
+        "risk_score",
+        "category",
+        "message",
+        "username",
+        "source_ip",
+        "process",
+        "hostname",
+    }
+    for field, value in updates.items():
+        if field in allowed_fields:
+            setattr(record, field, value)
+
+    session.flush()
+    session.refresh(record)
+    return record
+
+
+def delete_event_by_id(session: Session, event_id: str) -> bool:
+    """Delete a single security event by its unique event_id."""
+    record = get_event_by_id(session, event_id)
+    if record is None:
+        return False
+    session.delete(record)
+    return True
 
 
 def delete_events(

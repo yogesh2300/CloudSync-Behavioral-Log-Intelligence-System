@@ -26,7 +26,7 @@ router = APIRouter()
 class SecurityEventResponse(BaseModel):
     """Pydantic schema representing a serialized security event."""
 
-    id: int = Field(..., description="Internal primary key identifier")
+    id: str = Field(..., description="Internal primary key identifier (UUID)")
     event_id: str = Field(..., description="Unique UUID for the security event")
     timestamp: datetime = Field(..., description="Timestamp of the event in UTC")
     hostname: str = Field(..., description="Originating host machine name")
@@ -132,6 +132,8 @@ def query_events(
     category: str | None = Query(None, description="Filter by high-level category"),
     username: str | None = Query(None, description="Filter by associated username"),
     source_ip: str | None = Query(None, description="Filter by originating source IP"),
+    hostname: str | None = Query(None, description="Filter by originating hostname"),
+    search: str | None = Query(None, description="Search message, username, hostname, IP, and log text"),
     start_time: datetime | None = Query(None, description="Filter events after this UTC timestamp"),
     end_time: datetime | None = Query(None, description="Filter events before this UTC timestamp"),
     sort_order: Literal["newest", "oldest"] = Query("newest", description="Sorting by timestamp"),
@@ -148,6 +150,8 @@ def query_events(
         category=category,
         username=username,
         source_ip=source_ip,
+        hostname=hostname,
+        search=search,
         start_time=start_time,
         end_time=end_time,
         sort_order=sort_order,

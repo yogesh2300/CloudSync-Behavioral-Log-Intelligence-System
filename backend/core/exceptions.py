@@ -63,6 +63,11 @@ class DatabaseException(CloudSyncException):
         super().__init__(message)
 
 
+class DuplicateResourceError(CloudSyncException):
+    def __init__(self, message: str = "Resource already exists.") -> None:
+        super().__init__(message)
+
+
 # ==============================================================================
 # Exception Handlers
 # ==============================================================================
@@ -76,6 +81,7 @@ async def cloudsync_exception_handler(
         AuthenticationError: status.HTTP_401_UNAUTHORIZED,
         AuthorizationError: status.HTTP_403_FORBIDDEN,
         ResourceNotFoundError: status.HTTP_404_NOT_FOUND,
+        DuplicateResourceError: status.HTTP_409_CONFLICT,
         ValidationException: status.HTTP_422_UNPROCESSABLE_ENTITY,
         DatabaseException: status.HTTP_500_INTERNAL_SERVER_ERROR,
     }

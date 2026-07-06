@@ -6,33 +6,16 @@ import os
 from functools import lru_cache
 from typing import Iterator
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-load_dotenv()
-
-
-def _require_env(name: str) -> str:
-    """Return a required database environment variable."""
-    value = os.getenv(name)
-    if not value:
-        raise RuntimeError(
-            f"Missing required environment variable {name}. "
-            "Set it in your .env file before connecting to PostgreSQL."
-        )
-    return value
+from backend.core.config import get_settings
 
 
 def get_database_url() -> str:
-    """Build a PostgreSQL connection URL from .env variables."""
-    host = _require_env("DB_HOST")
-    port = _require_env("DB_PORT")
-    name = _require_env("DB_NAME")
-    user = _require_env("DB_USER")
-    password = _require_env("DB_PASSWORD")
-    return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{name}"
+    """Return the PostgreSQL connection URL from application settings."""
+    return get_settings().DATABASE_URL
 
 
 @lru_cache(maxsize=1)
