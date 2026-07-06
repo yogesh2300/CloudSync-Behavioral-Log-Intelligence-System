@@ -4,6 +4,7 @@ from __future__ import annotations
 from backend.core.logging import get_logger
 from datetime import datetime
 from typing import Any
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -33,6 +34,31 @@ class SecurityEventResponse(BaseModel):
     message: str = Field(..., description="Human-readable event summary or log text")
 
     model_config = {"from_attributes": True}
+    
+class SecurityEventCreate(BaseModel):
+    """Schema used for ingesting a security event."""
+
+    event_id: str
+    timestamp: datetime
+    hostname: str
+    event_type: str
+    category: str
+    severity: Literal["info","low","medium","high","critical",]
+    risk_score: int = Field(ge=0,le=100,)
+    message: str
+    raw_log: str
+
+    username: str | None = None
+    source_ip: str | None = None
+    process: str | None = None
+    
+    
+class IngestionResponse(BaseModel):
+    """Response returned after successful event ingestion."""
+
+    success: bool
+    message: str
+    event: SecurityEventResponse
 
 
 def get_event_service(db: Session = Depends(get_db)) -> EventService:
@@ -109,3 +135,33 @@ def get_event_by_id(
             detail=f"Security event with ID '{event_id}' was not found.",
         )
     return event
+
+
+@router.post(
+    "",
+    response_model=IngestionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Ingest Security Event",
+)
+def ingest_event(
+    event: SecurityEventCreate,
+    service: EventService = Depends(get_event_service),
+) -> Any:
+    """
+    Store a single normalized security event.
+    """
+
+    logger.info(
+        "API request: POST /events (%s)",
+        event.event_id,
+    )
+
+    created = service.ingest_single_event(
+        event.model_dump()
+    )
+
+    return IngestionResponse(
+        success=True,
+        message="Security event stored successfully.",
+        event=SecurityEventResponse.model_validate(created),
+    )

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import crud
 from backend.database.models import SecurityEvent
+from backend.core.exceptions import DatabaseException
 
 logger = logging.getLogger(__name__)
 
@@ -58,3 +59,38 @@ class EventService:
         event_list = list(events)
         logger.info("Persisting batch of %d security events", len(event_list))
         return crud.insert_many(self._session, event_list)
+    
+    
+    def ingest_single_event(
+        self,
+        event: Mapping[str, Any],
+    ) -> SecurityEvent:
+        """Persist a single security event using a transaction."""
+        
+        logger.info(
+            "Ingesting security event: %s",
+            event.get("event_id"),
+        )
+        
+        try:
+            record = crud.insert_event(
+                self._session,
+                event,
+            )
+            
+            self._session.commit()
+            
+            logger.info("Security event stored successfully.)
+            
+            return record
+        
+        except Exception as exc:
+            self._session.rollback()
+
+            logger.exception(
+                "Failed to ingest security event."
+            )
+
+            raise DatabaseException(
+                "Failed to store security event."
+            ) from exc

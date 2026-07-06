@@ -12,12 +12,22 @@ from sqlalchemy.orm import Session
 from backend.database.models import SecurityEvent, User
 
 
-def insert_event(session: Session, event: Mapping[str, Any]) -> SecurityEvent:
-    """Persist a single security event."""
+def insert_event(
+    session: Session,
+    event: Mapping[str, Any],
+) -> SecurityEvent:
+    """
+    Persist a single security event.
+
+    Transaction management is handled by the service layer.
+    """
+
     record = _to_model(event)
+
     session.add(record)
+
     session.flush()
-    session.refresh(record)
+
     return record
 
 
