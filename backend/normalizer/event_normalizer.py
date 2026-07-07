@@ -17,6 +17,10 @@ from backend.normalizer.severity import RiskScoreCalculator, SeverityLevel
 
 ParsedLog = dict[str, Any]
 
+# Placeholders used when score_risk=False; RiskEngine replaces these values.
+_UNSCORED_SEVERITY = "info"
+_UNSCORED_RISK_SCORE = 0
+
 # --- Secure log (/var/log/secure) patterns ---
 
 _SECURE_FAILED_LOGIN = re.compile(
@@ -329,6 +333,9 @@ class EventNormalizer:
     """
     Convert parsed log dictionaries into NormalizedSecurityEvent instances.
 
+    Classification and field normalization always run. Risk scoring is optional:
+    set score_risk=False when a downstream RiskEngine owns scoring (pipeline path).
+
     Unrecognized or malformed entries are skipped (returns None per entry).
     """
 
@@ -338,6 +345,7 @@ class EventNormalizer:
         risk_calculator: RiskScoreCalculator | None = None,
         timestamp_normalizer: TimestampNormalizer | None = None,
         default_hostname: str = "unknown",
+        score_risk: bool = True,
     ) -> None:
         self._classifiers: tuple[LogClassifier, ...] = tuple(
             classifiers or (SecureLogClassifier(), AuditLogClassifier())
@@ -345,6 +353,7 @@ class EventNormalizer:
         self._risk_calculator = risk_calculator or RiskScoreCalculator()
         self._timestamp_normalizer = timestamp_normalizer or DefaultTimestampNormalizer()
         self._default_hostname = default_hostname
+        self._score_risk = score_risk
 
     def normalize(self, parsed: ParsedLog) -> NormalizedSecurityEvent | None:
         """Normalize a single parsed log dictionary."""
@@ -356,12 +365,16 @@ class EventNormalizer:
             return None
 
         event_type = classification.event_type
-        severity = self._risk_calculator.severity_for(event_type)
-        risk_score = self._risk_calculator.calculate(
-            event_type,
-            is_root=classification.is_root,
-            is_remote=classification.is_remote,
-        )
+        if self._score_risk:
+            severity = self._risk_calculator.severity_for(event_type).value
+            risk_score = self._risk_calculator.calculate(
+                event_type,
+                is_root=classification.is_root,
+                is_remote=classification.is_remote,
+            )
+        else:
+            severity = _UNSCORED_SEVERITY
+            risk_score = _UNSCORED_RISK_SCORE
 
         hostname = str(parsed.get("hostname") or self._default_hostname)
         raw_log = str(parsed.get("raw", ""))
@@ -374,13 +387,15 @@ class EventNormalizer:
             source_ip=classification.source_ip,
             event_type=event_type,
             category=category_for(event_type),
-            severity=severity.value,
+            severity=severity,
             risk_score=risk_score,
             raw_log=raw_log,
             metadata={
                 "source": parsed.get("source"),
                 "path": parsed.get("path"),
                 "line_number": parsed.get("line_number"),
+                "is_root": classification.is_root,
+                "is_remote": classification.is_remote,
                 **classification.metadata,
             },
         )

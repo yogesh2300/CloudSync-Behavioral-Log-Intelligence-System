@@ -1,4 +1,4 @@
-"""PostgreSQL connection and session management for CloudSync."""
+"""PostgreSQL connection and session management for DefenSync."""
 
 from __future__ import annotations
 

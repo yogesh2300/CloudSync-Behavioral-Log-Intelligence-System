@@ -1,4 +1,4 @@
-"""Behavioral log parser for CloudSync secure.log and audit.log entries."""
+"""Behavioral log parser for DefenSync secure.log and audit.log entries."""
 
 from backend.parser.audit_events import parse_audit_event
 from backend.parser.engine import (

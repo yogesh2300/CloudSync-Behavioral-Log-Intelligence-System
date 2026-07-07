@@ -1,13 +1,14 @@
-"""CRUD operations for CloudSync security event persistence."""
+"""CRUD operations for DefenSync security event persistence."""
 
 from __future__ import annotations
 
+import json
 import uuid
 import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Any, Iterable, Mapping
 
-from sqlalchemy import ColumnElement, desc, or_, select, func, delete
+from sqlalchemy import ColumnElement, case, desc, or_, select, func, delete
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
@@ -36,13 +37,15 @@ def insert_many(session: Session, events: Iterable[Mapping[str, Any]]) -> list[S
     return records
 
 
-def get_recent_events(session: Session, *, limit: int = 100) -> list[SecurityEvent]:
+def get_recent_events(session: Session, *, limit: int = 100, owner_id: str | None = None) -> list[SecurityEvent]:
     """Return the most recent events ordered by event timestamp."""
     stmt = (
         select(SecurityEvent)
         .order_by(desc(SecurityEvent.timestamp), desc(SecurityEvent.id))
         .limit(limit)
     )
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return list(session.scalars(stmt).all())
 
 
@@ -51,6 +54,7 @@ def get_high_risk_events(
     *,
     min_score: int = 70,
     limit: int = 100,
+    owner_id: str | None = None,
 ) -> list[SecurityEvent]:
     """Return events at or above the configured risk score threshold."""
     stmt = (
@@ -59,6 +63,8 @@ def get_high_risk_events(
         .order_by(desc(SecurityEvent.risk_score), desc(SecurityEvent.timestamp))
         .limit(limit)
     )
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return list(session.scalars(stmt).all())
 
 
@@ -140,15 +146,18 @@ def get_events_by_hostname(
     return list(session.scalars(stmt).all())
 
 
-def count_events(session: Session) -> int:
+def count_events(session: Session, *, owner_id: str | None = None) -> int:
     """Return total number of security events."""
     stmt = select(func.count()).select_from(SecurityEvent)
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return session.scalar(stmt) or 0
 
 
 def count_high_risk_events(
     session: Session,
     min_score: int = 70,
+    owner_id: str | None = None,
 ) -> int:
     """Return number of high-risk security events."""
     stmt = (
@@ -156,50 +165,74 @@ def count_high_risk_events(
         .select_from(SecurityEvent)
         .where(SecurityEvent.risk_score >= min_score)
     )
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return session.scalar(stmt) or 0
 
 
-def count_failed_logins(session: Session) -> int:
+def count_failed_logins(session: Session, *, owner_id: str | None = None) -> int:
     """Return number of failed login events."""
     stmt = (
         select(func.count())
         .select_from(SecurityEvent)
         .where(SecurityEvent.event_type == "Failed Login")
     )
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return session.scalar(stmt) or 0
 
 
-def count_successful_logins(session: Session) -> int:
+def count_successful_logins(session: Session, *, owner_id: str | None = None) -> int:
     """Return number of successful login events."""
     stmt = (
         select(func.count())
         .select_from(SecurityEvent)
         .where(SecurityEvent.event_type == "Successful Login")
     )
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return session.scalar(stmt) or 0
 
 
-def count_unique_users(session: Session) -> int:
+def count_unique_users(session: Session, *, owner_id: str | None = None) -> int:
     """Return number of unique usernames."""
     stmt = select(func.count(func.distinct(SecurityEvent.username)))
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return session.scalar(stmt) or 0
 
 
-def count_unique_ips(session: Session) -> int:
+def count_unique_ips(session: Session, *, owner_id: str | None = None) -> int:
     """Return number of unique source IPs."""
     stmt = select(func.count(func.distinct(SecurityEvent.source_ip)))
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
     return session.scalar(stmt) or 0
 
 
-def dashboard_summary(session: Session) -> dict[str, int]:
+def dashboard_summary(session: Session, *, owner_id: str | None = None) -> dict[str, int]:
     """Return summary statistics for the dashboard."""
+    stmt = select(
+        func.count(SecurityEvent.id),
+        func.sum(case((SecurityEvent.risk_score >= 70, 1), else_=0)),
+        func.sum(case((SecurityEvent.event_type == "Failed Login", 1), else_=0)),
+        func.sum(case((SecurityEvent.event_type == "Successful Login", 1), else_=0)),
+        func.count(func.distinct(SecurityEvent.username)),
+        func.count(func.distinct(SecurityEvent.source_ip)),
+        func.avg(SecurityEvent.risk_score),
+    )
+    if owner_id:
+        stmt = stmt.where(SecurityEvent.owner_id == owner_id)
+    row = session.execute(stmt).one()
+    avg_risk = row[6] or 0
     return {
-        "total_events": count_events(session),
-        "high_risk": count_high_risk_events(session),
-        "failed_logins": count_failed_logins(session),
-        "successful_logins": count_successful_logins(session),
-        "unique_users": count_unique_users(session),
-        "unique_ips": count_unique_ips(session),
+        "total_events": int(row[0] or 0),
+        "high_risk": int(row[1] or 0),
+        "failed_logins": int(row[2] or 0),
+        "successful_logins": int(row[3] or 0),
+        "unique_users": int(row[4] or 0),
+        "unique_ips": int(row[5] or 0),
+        "average_risk_score": int(round(avg_risk)),
     }
 
 
@@ -223,6 +256,8 @@ def _event_filter_clauses(
     username: str | None = None,
     source_ip: str | None = None,
     hostname: str | None = None,
+    server_id: str | None = None,
+    owner_id: str | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     search: str | None = None,
@@ -244,6 +279,10 @@ def _event_filter_clauses(
         clauses.append(SecurityEvent.source_ip == source_ip)
     if hostname:
         clauses.append(SecurityEvent.hostname == hostname)
+    if server_id:
+        clauses.append(SecurityEvent.server_id == server_id)
+    if owner_id:
+        clauses.append(SecurityEvent.owner_id == owner_id)
     if start_time:
         clauses.append(SecurityEvent.timestamp >= start_time)
     if end_time:
@@ -292,6 +331,8 @@ def query_events(
     username: str | None = None,
     source_ip: str | None = None,
     hostname: str | None = None,
+    server_id: str | None = None,
+    owner_id: str | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     search: str | None = None,
@@ -307,6 +348,8 @@ def query_events(
         username=username,
         source_ip=source_ip,
         hostname=hostname,
+        server_id=server_id,
+        owner_id=owner_id,
         start_time=start_time,
         end_time=end_time,
         search=search,
@@ -328,6 +371,8 @@ def count_query_events(
     username: str | None = None,
     source_ip: str | None = None,
     hostname: str | None = None,
+    server_id: str | None = None,
+    owner_id: str | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     search: str | None = None,
@@ -342,6 +387,8 @@ def count_query_events(
         username=username,
         source_ip=source_ip,
         hostname=hostname,
+        server_id=server_id,
+        owner_id=owner_id,
         start_time=start_time,
         end_time=end_time,
         search=search,
@@ -459,6 +506,8 @@ def _to_model(event: Mapping[str, Any]) -> SecurityEvent:
     h_val = payload.get("hash") or calculate_event_hash(raw_log, ts)
     return SecurityEvent(
         event_id=str(payload["event_id"]),
+        server_id=payload.get("server_id"),
+        owner_id=payload.get("owner_id"),
         timestamp=ts,
         hostname=str(payload["hostname"]),
         username=payload.get("username"),
@@ -467,10 +516,22 @@ def _to_model(event: Mapping[str, Any]) -> SecurityEvent:
         category=str(payload["category"]),
         severity=str(payload["severity"]),
         risk_score=int(payload["risk_score"]),
+        risk_level=payload.get("risk_level"),
+        command=payload.get("command"),
         process=payload.get("process"),
         message=str(payload["message"]),
         raw_log=raw_log,
+        normalized_data=payload.get("normalized_data"),
         hash=h_val,
+        cpu_usage=payload.get("cpu_usage"),
+        memory_usage=payload.get("memory_usage"),
+        disk_usage=payload.get("disk_usage"),
+        login_time=_parse_timestamp(payload["login_time"]) if payload.get("login_time") else None,
+        logout_time=_parse_timestamp(payload["logout_time"]) if payload.get("logout_time") else None,
+        failed_login_count=payload.get("failed_login_count"),
+        session_duration=payload.get("session_duration"),
+        commands_executed=payload.get("commands_executed"),
+        network_connections=payload.get("network_connections"),
     )
 
 
@@ -483,8 +544,13 @@ def _normalize_payload(event: Mapping[str, Any]) -> dict[str, Any]:
 
     metadata = payload.get("metadata") or {}
 
+    risk_score = int(payload.get("risk_score", metadata.get("risk_score", 0)))
+    from backend.risk.levels import risk_level_from_score
+
     return {
         "event_id": payload.get("event_id") or str(uuid.uuid4()),
+        "server_id": payload.get("server_id"),
+        "owner_id": payload.get("owner_id"),
         "timestamp": payload["timestamp"],
         "hostname": payload.get("hostname") or "unknown",
         "username": payload.get("username"),
@@ -492,10 +558,22 @@ def _normalize_payload(event: Mapping[str, Any]) -> dict[str, Any]:
         "event_type": payload["event_type"],
         "category": payload.get("category") or metadata.get("category") or "unknown",
         "severity": payload.get("severity") or metadata.get("severity") or "info",
-        "risk_score": payload.get("risk_score", metadata.get("risk_score", 0)),
+        "risk_score": risk_score,
+        "risk_level": payload.get("risk_level") or metadata.get("risk_level") or risk_level_from_score(risk_score),
+        "command": payload.get("command") or metadata.get("command"),
         "process": payload.get("process") or metadata.get("process"),
         "message": payload.get("message") or metadata.get("message") or payload.get("raw_log", ""),
         "raw_log": payload.get("raw_log") or payload.get("raw") or "",
+        "normalized_data": payload.get("normalized_data") or json.dumps(metadata, default=str),
+        "cpu_usage": payload.get("cpu_usage"),
+        "memory_usage": payload.get("memory_usage"),
+        "disk_usage": payload.get("disk_usage"),
+        "login_time": payload.get("login_time"),
+        "logout_time": payload.get("logout_time"),
+        "failed_login_count": payload.get("failed_login_count"),
+        "session_duration": payload.get("session_duration"),
+        "commands_executed": payload.get("commands_executed"),
+        "network_connections": payload.get("network_connections"),
     }
 
 
@@ -525,6 +603,21 @@ def get_user_by_email(session: Session, email: str) -> User | None:
     return session.scalar(stmt)
 
 
+def list_users(session: Session) -> list[User]:
+    """Return all users ordered by creation time."""
+    return list(session.scalars(select(User).order_by(desc(User.created_at))).all())
+
+
+def delete_user(session: Session, user_id: str) -> bool:
+    """Delete a user by ID."""
+    user = session.get(User, user_id)
+    if user is None:
+        return False
+    session.delete(user)
+    session.flush()
+    return True
+
+
 def create_user(
     session: Session,
     username: str,
@@ -534,10 +627,12 @@ def create_user(
 ) -> User:
     """Create and persist a new user."""
     user = User(
+        name=username,
         username=username,
         email=email,
+        password_hash=password,
         hashed_password=password,
-        role=role,
+        role=role.upper(),
     )
     session.add(user)
     session.flush()

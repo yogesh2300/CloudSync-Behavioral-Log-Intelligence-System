@@ -1,14 +1,5 @@
 """
-CloudSync System Configuration.
-
-Centralized application configuration using Pydantic v2.
-
-Responsibilities:
-- Load environment variables from .env
-- Validate configuration
-- Provide strongly typed settings
-- Build database connection URL
-- Configure JWT, CORS, Logging, and Application settings
+DefenSync System Configuration.
 """
 
 from __future__ import annotations
@@ -27,9 +18,9 @@ class Settings(BaseSettings):
     # Application
     # ==========================================================================
 
-    APP_NAME: str = "CloudSync - Behavioral Log Intelligence System"
+    APP_NAME: str = "DefenSync - Behavioral Log Intelligence System"
     APP_DESCRIPTION: str = (
-        "Behavioral Log Intelligence and Security Event Analysis Platform"
+        "Multi-server behavioral log intelligence and security event analysis platform"
     )
 
     API_VERSION: str = "v1"
@@ -48,7 +39,7 @@ class Settings(BaseSettings):
 
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
-    DB_NAME: str = "cloudsync"
+    DB_NAME: str = "defensync_db"
     DB_USER: str = "postgres"
     DB_PASSWORD: str = "postgres"
 
@@ -92,6 +83,14 @@ class Settings(BaseSettings):
     # ==========================================================================
 
     LOG_LEVEL: str = "INFO"
+
+    # ==========================================================================
+    # Background Scheduler (multi-server collection)
+    # ==========================================================================
+
+    SCHEDULER_ENABLED: bool = False
+    COLLECTION_INTERVAL_MINUTES: int = 15
+    COLLECTION_TAIL_LINES: int = 500
 
     # ==========================================================================
     # Pydantic Settings Configuration

@@ -1,4 +1,4 @@
-"""Security event type definitions for the CloudSync normalizer."""
+"""Security event type definitions for the DefenSync normalizer."""
 
 from __future__ import annotations
 
@@ -71,3 +71,24 @@ class NormalizedSecurityEvent:
         payload["event_type"] = self.event_type.value
         payload["category"] = self.category.value
         return payload
+
+    def to_persistence_dict(self) -> dict[str, Any]:
+        """Map to a payload compatible with SecurityEvent ingestion and CRUD."""
+        metadata = dict(self.metadata)
+        message = metadata.get("message") or self.raw_log or self.event_type.value
+        process = metadata.get("process")
+        return {
+            "event_id": self.event_id,
+            "timestamp": self.timestamp,
+            "hostname": self.hostname,
+            "username": self.username,
+            "source_ip": self.source_ip,
+            "event_type": self.event_type.value,
+            "category": self.category.value,
+            "severity": self.severity,
+            "risk_score": self.risk_score,
+            "message": message,
+            "raw_log": self.raw_log,
+            "process": process,
+            "metadata": metadata,
+        }

@@ -1,6 +1,6 @@
-"""SSH log collector for CentOS Stream security and audit logs."""
+"""SSH log collection package for DefenSync."""
 
 from backend.collector.config import SSHConfig
-from backend.collector.log_collector import LogCollector, collect_logs
+from backend.collector.log_sources import DEFAULT_LOG_SOURCES, LOG_SOURCE_CATALOG
 
-__all__ = ["SSHConfig", "LogCollector", "collect_logs"]
+__all__ = ["SSHConfig", "DEFAULT_LOG_SOURCES", "LOG_SOURCE_CATALOG"]

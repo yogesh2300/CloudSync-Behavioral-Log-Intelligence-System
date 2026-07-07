@@ -1,5 +1,5 @@
 """
-CloudSync Security Utilities.
+DefenSync Security Utilities.
 
 Provides:
 - Password hashing and verification

@@ -1,4 +1,4 @@
-"""PostgreSQL storage layer for CloudSync behavioral log intelligence."""
+"""PostgreSQL storage layer for DefenSync behavioral log intelligence."""
 
 from backend.database.connection import get_database_url, get_engine, get_session, session_scope
 from backend.database.crud import (
@@ -9,10 +9,13 @@ from backend.database.crud import (
     insert_many,
 )
 from backend.database.init_db import create_tables
-from backend.database.models import Base, SecurityEvent
+from backend.database.models import Base, Detection, Event, MLPrediction, SecurityEvent
 
 __all__ = [
     "Base",
+    "Detection",
+    "Event",
+    "MLPrediction",
     "SecurityEvent",
     "create_tables",
     "get_database_url",

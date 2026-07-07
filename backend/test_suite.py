@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CloudSync Integration Test Suite.
+DefenSync Integration Test Suite.
 A zero-dependency validation script to test the complete FastAPI Event Management System.
 Uses only Python's built-in standard libraries to ensure cross-platform compatibility.
 """
@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 DEFAULT_API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 
-class CloudSyncTestClient:
+class DefenSyncTestClient:
     """A lightweight, zero-dependency HTTP client to interact with the FastAPI server."""
 
     def __init__(self, base_url: str = DEFAULT_API_URL):
@@ -72,16 +72,16 @@ class CloudSyncTestClient:
             sys.exit(1)
 
 
-class TestCloudSyncBackend(unittest.TestCase):
-    """Test suite executing standard and behavioral endpoints on CloudSync."""
+class TestDefenSyncBackend(unittest.TestCase):
+    """Test suite executing standard and behavioral endpoints on DefenSync."""
 
     @classmethod
     def setUpClass(cls):
-        cls.client = CloudSyncTestClient()
+        cls.client = DefenSyncTestClient()
         suffix = random.randint(1000, 9999)
         cls.analyst_username = f"analyst_{suffix}"
         cls.analyst_password = "SecurePassword123!"
-        cls.analyst_email = f"{cls.analyst_username}@cloudsync.local"
+        cls.analyst_email = f"{cls.analyst_username}@DefenSync.local"
 
     def test_01_health_check(self):
         """Test GET /health endpoint."""
@@ -247,7 +247,7 @@ class TestCloudSyncBackend(unittest.TestCase):
 
 if __name__ == "__main__":
     print("======================================================================")
-    print("CloudSync Integration Test Suite")
+    print("DefenSync Integration Test Suite")
     print(f"Testing target backend URL: {DEFAULT_API_URL}")
     print("======================================================================")
     unittest.main()

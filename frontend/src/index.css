@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cyber-950: #111111;
+  --color-cyber-900: #F5F6F4;
+  --color-cyber-850: #EFEFED;
+  --color-cyber-800: #E2E4E1;
+  --color-cyber-700: #C9CCC7;
+  --color-cyber-600: #858985;
+  --color-cyber-accent: #F2F2F2;
+  --color-cyber-success: #6EA779;
+  --color-cyber-warning: #B89B5E;
+  --color-cyber-danger: #B76E79;
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --app-bg: #ECEFED;
+    --app-bg-2: #F7F8F6;
+    --panel: #F7F8F6;
+    --panel-strong: #ffffff;
+    --panel-border: #DADDD8;
+    --text-main: #111111;
+    --text-muted: #6F746F;
+    --grid-line: rgba(17, 17, 17, 0.024);
+    --accent: #111111;
+    --mint: #D8ECE6;
+    --mint-strong: #BFDCD3;
+    --success: #5F8F69;
+    --warning: #9A7C3F;
+    --critical: #9F5F68;
+    --shadow-panel: 0 18px 50px rgba(17, 17, 17, 0.08);
+  }
+
+  html {
+    @apply antialiased;
+    background: var(--app-bg);
+    transition: background-color 350ms ease, color 350ms ease;
+  }
+
+  body {
+    @apply font-sans;
+    min-height: 100vh;
+    background: var(--app-bg);
+    color: var(--text-main);
+    transition: background 350ms ease, color 350ms ease;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(15, 23, 42, 0.4);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full;
+    background: #64748b;
+  }
+}
+
+@layer utilities {
+  .grid-bg {
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .cyber-card {
+    position: relative;
+    overflow: hidden;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 28px;
+    box-shadow: var(--shadow-panel);
+    transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  }
+
+  .cyber-card::before {
+    content: none;
+  }
+
+  .cyber-card:hover {
+    transform: translateY(-4px);
+    border-color: color-mix(in srgb, var(--text-muted) 42%, var(--panel-border));
+    box-shadow: 0 24px 60px rgba(17, 17, 17, 0.1);
+  }
+
+  .cyber-text {
+    color: var(--text-main);
+  }
+
+  .muted-text {
+    color: var(--text-muted);
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, rgba(148, 163, 184, 0.08), rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.08));
+    background-size: 200% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+
+  .page-shell {
+    @apply w-full space-y-4;
+  }
+
+  .page-fill {
+    min-height: calc(100vh - 7rem);
+  }
+}
+
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}

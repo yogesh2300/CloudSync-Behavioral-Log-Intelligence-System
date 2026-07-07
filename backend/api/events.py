@@ -28,6 +28,8 @@ class SecurityEventResponse(BaseModel):
 
     id: str = Field(..., description="Internal primary key identifier (UUID)")
     event_id: str = Field(..., description="Unique UUID for the security event")
+    server_id: str | None = Field(None, description="Registered server ID for this event")
+    owner_id: str | None = Field(None, description="Owner user ID for this event")
     timestamp: datetime = Field(..., description="Timestamp of the event in UTC")
     hostname: str = Field(..., description="Originating host machine name")
     username: str | None = Field(None, description="Username associated with the event")
@@ -36,8 +38,12 @@ class SecurityEventResponse(BaseModel):
     category: str = Field(..., description="Event category (e.g., authentication, system)")
     severity: str = Field(..., description="Severity rating (info, low, medium, high, critical)")
     risk_score: int = Field(..., description="Calculated behavioral risk score (0-100)")
+    risk_level: str | None = Field(None, description="Risk level derived from score")
+    command: str | None = Field(None, description="Command observed in the event")
     process: str | None = Field(None, description="Process or daemon name generating the log")
     message: str = Field(..., description="Human-readable event summary or log text")
+    raw_log: str | None = Field(None, description="Original collected log line")
+    normalized_data: str | None = Field(None, description="JSON normalized metadata for this event")
 
     model_config = {"from_attributes": True}
 
@@ -46,6 +52,7 @@ class SecurityEventCreate(BaseModel):
     """Pydantic schema for validating incoming security event payload."""
 
     event_id: str | None = Field(None, description="Unique UUID for the security event")
+    server_id: str | None = Field(None, description="Registered server ID")
     timestamp: datetime | None = Field(None, description="Timestamp of the event in UTC")
     hostname: str = Field("unknown", min_length=1, max_length=255, description="Originating host machine name")
     event_type: str = Field(..., min_length=1, max_length=64, description="Normalized classification of the event")
@@ -58,6 +65,8 @@ class SecurityEventCreate(BaseModel):
     username: str | None = Field(None, max_length=255, description="Username associated with the event")
     source_ip: str | None = Field(None, max_length=45, description="Source IP address if network-related")
     process: str | None = Field(None, max_length=255, description="Process or daemon name generating the log")
+    command: str | None = Field(None, description="Command observed in the event")
+    normalized_data: str | None = Field(None, description="JSON normalized metadata for this event")
 
     @field_validator("event_type")
     @classmethod
@@ -133,6 +142,7 @@ def query_events(
     username: str | None = Query(None, description="Filter by associated username"),
     source_ip: str | None = Query(None, description="Filter by originating source IP"),
     hostname: str | None = Query(None, description="Filter by originating hostname"),
+    server_id: str | None = Query(None, description="Filter by monitored server ID"),
     search: str | None = Query(None, description="Search message, username, hostname, IP, and log text"),
     start_time: datetime | None = Query(None, description="Filter events after this UTC timestamp"),
     end_time: datetime | None = Query(None, description="Filter events before this UTC timestamp"),
@@ -142,6 +152,7 @@ def query_events(
 ) -> Any:
     """Query, filter, and paginate security events."""
     logger.info("API request by %s: GET /events", current_user.username)
+    owner_id = None if current_user.role.upper() == "ADMIN" else current_user.id
     return service.query_events(
         limit=limit,
         offset=offset,
@@ -151,6 +162,8 @@ def query_events(
         username=username,
         source_ip=source_ip,
         hostname=hostname,
+        server_id=server_id,
+        owner_id=owner_id,
         search=search,
         start_time=start_time,
         end_time=end_time,
@@ -165,7 +178,8 @@ def get_event_stats(
 ) -> Any:
     """Retrieve aggregated SIEM metrics, severity distributions, attacker IP ranks, and hourly trends."""
     logger.info("API request by %s: GET /events/stats", current_user.username)
-    return analytics_service.get_event_stats()
+    owner_id = None if current_user.role.upper() == "ADMIN" else current_user.id
+    return analytics_service.get_event_stats(owner_id=owner_id)
 
 
 @router.get("/recent", response_model=list[SecurityEventResponse], status_code=status.HTTP_200_OK, summary="List Recent Events")
@@ -176,7 +190,8 @@ def get_recent_events(
 ) -> Any:
     """Retrieve the absolute latest security events, optimized for live SIEM dashboards."""
     logger.info("API request by %s: GET /events/recent (limit=%d)", current_user.username, limit)
-    return service.get_recent_events(limit=limit)
+    owner_id = None if current_user.role.upper() == "ADMIN" else current_user.id
+    return service.get_recent_events(limit=limit, owner_id=owner_id)
 
 
 @router.get("/high-risk", response_model=list[SecurityEventResponse], status_code=status.HTTP_200_OK, summary="List High-Risk Events")
@@ -188,7 +203,8 @@ def get_high_risk_events(
 ) -> Any:
     """Retrieve high-risk security events meeting or exceeding risk score (>= 70), sorted descending."""
     logger.info("API request by %s: GET /events/high-risk (min_score=%d)", current_user.username, min_score)
-    return service.get_high_risk_events(min_score=min_score, limit=limit)
+    owner_id = None if current_user.role.upper() == "ADMIN" else current_user.id
+    return service.get_high_risk_events(min_score=min_score, limit=limit, owner_id=owner_id)
 
 
 @router.post("", response_model=IngestionResponse, status_code=status.HTTP_201_CREATED, summary="Ingest a Single Event")
@@ -199,7 +215,9 @@ def ingest_single_event(
 ) -> Any:
     """Ingest, validate, and persist a single security event."""
     logger.info("API request by %s: POST /events (event_id=%s)", current_user.username, event_data.event_id)
-    inserted_event = ingestion_service.ingest_single_event(event_data.model_dump())
+    payload = event_data.model_dump()
+    payload["owner_id"] = current_user.id
+    inserted_event = ingestion_service.ingest_single_event(payload)
     return IngestionResponse(
         success=True,
         message="Event stored successfully.",
@@ -215,7 +233,12 @@ def ingest_bulk_events(
 ) -> Any:
     """Ingest multiple security events in bulk, returning execution summaries and errors."""
     logger.info("API request by %s: POST /events/bulk (count=%d)", current_user.username, len(events_data))
-    stats = ingestion_service.ingest_bulk_events(events_data)
+    payloads = []
+    for item in events_data:
+        payload = dict(item)
+        payload.setdefault("owner_id", current_user.id)
+        payloads.append(payload)
+    stats = ingestion_service.ingest_bulk_events(payloads)
     return BulkIngestionResponse(
         success=True,
         inserted=stats["inserted"],

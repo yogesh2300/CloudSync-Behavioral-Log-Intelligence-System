@@ -1,4 +1,4 @@
-"""Authentication and registration HTTP API layer for CloudSync."""
+"""Authentication and registration HTTP API layer for DefenSync."""
 
 from datetime import datetime
 from fastapi import APIRouter, Depends, status
@@ -6,7 +6,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 
-from backend.api.dependencies import get_db, get_current_user
+from backend.api.dependencies import get_db, get_current_admin, get_current_user
+from backend.core.exceptions import ResourceNotFoundError, ValidationException
+from backend.database import crud
 from backend.database.models import User
 from backend.services.auth_service import AuthService
 
@@ -50,10 +52,23 @@ class TokenResponse(BaseModel):
 class UserMeResponse(BaseModel):
     """Schema for returning the currently authenticated user's profile."""
 
+    id: str
+    name: str
     username: str
     email: str
     role: str
     created_at: datetime
+
+
+class UserResponse(BaseModel):
+    id: str
+    name: str | None = None
+    username: str
+    email: str
+    role: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 # =============================================================================
@@ -118,8 +133,44 @@ def get_me(
 ) -> UserMeResponse:
     """Retrieve details of the currently authenticated active user session."""
     return UserMeResponse(
+        id=current_user.id,
+        name=current_user.name or current_user.username,
         username=current_user.username,
         email=current_user.email,
-        role=current_user.role,
+        role=current_user.role.upper(),
         created_at=current_user.created_at,
     )
+
+
+@router.get("/users", response_model=list[UserResponse], summary="List users (Admin Only)")
+def list_users(
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> list[UserResponse]:
+    del current_admin
+    return [
+        UserResponse(
+            id=user.id,
+            name=user.name or user.username,
+            username=user.username,
+            email=user.email,
+            role=user.role.upper(),
+            created_at=user.created_at,
+        )
+        for user in crud.list_users(db)
+    ]
+
+
+@router.delete("/users/{user_id}", summary="Delete user (Admin Only)")
+def delete_user(
+    user_id: str,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, object]:
+    if user_id == current_admin.id:
+        raise ValidationException("You cannot delete your own account.")
+    deleted = crud.delete_user(db, user_id)
+    if not deleted:
+        raise ResourceNotFoundError(f"User '{user_id}' not found.")
+    db.commit()
+    return {"success": True, "message": "User deleted."}

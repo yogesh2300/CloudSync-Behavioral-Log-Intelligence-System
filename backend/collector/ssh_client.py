@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Generator, List, Optional
 
 import paramiko
+import time
 
 from backend.collector.config import SSHConfig
 
@@ -19,8 +20,22 @@ class SSHClient:
         self._client: Optional[paramiko.SSHClient] = None
         self._sftp: Optional[paramiko.SFTPClient] = None
 
-    def connect(self) -> None:
-        """Open SSH and SFTP connections using the configured credentials."""
+    def connect(self, *, max_retries: int = 3, retry_delay: float = 1.5) -> None:
+        """Open SSH and SFTP connections with optional retry."""
+        last_error: Exception | None = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                self._connect_once()
+                return
+            except Exception as exc:
+                last_error = exc
+                self.disconnect()
+                if attempt < max_retries:
+                    time.sleep(retry_delay)
+        raise ConnectionError(f"SSH connection failed after {max_retries} attempts: {last_error}") from last_error
+
+    def _connect_once(self) -> None:
+        """Single SSH connection attempt."""
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
@@ -72,6 +87,15 @@ class SSHClient:
         if tail_lines is not None and tail_lines > 0:
             return text_lines[-tail_lines:]
         return text_lines
+
+    def run_remote_command(self, command: str, *, timeout: float = 30.0) -> list[str]:
+        """Execute a read-only remote command and return non-empty output lines."""
+        if self._client is None:
+            raise RuntimeError("SSH client is not connected. Call connect() first.")
+        _stdin, stdout, stderr = self._client.exec_command(command, timeout=timeout)
+        del _stdin, stderr
+        output = stdout.read().decode("utf-8", errors="replace")
+        return [line.rstrip("\r\n") for line in output.splitlines() if line.strip()]
 
     @contextmanager
     def session(self) -> Generator["SSHClient", None, None]:

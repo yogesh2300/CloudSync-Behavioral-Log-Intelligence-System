@@ -1,5 +1,5 @@
 """
-Authentication business logic service for CloudSync.
+Authentication business logic service for DefenSync.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ class AuthService:
         username: str,
         email: str,
         password: str,
-        role: str = "analyst",
+        role: str = "ANALYST",
     ) -> User:
 
         username = username.strip()
@@ -55,7 +55,8 @@ class AuthService:
         if not password:
             raise ValidationException("Password cannot be empty.")
 
-        if role not in {"admin", "analyst"}:
+        role = role.strip().upper()
+        if role not in {"ADMIN", "ANALYST"}:
             raise ValidationException("Invalid user role.")
 
         if get_user_by_username(self.db, username=username):
@@ -99,7 +100,7 @@ class AuthService:
 
         if not verify_password(
             password,
-            user.hashed_password,
+            user.password_hash or user.hashed_password,
         ):
             raise AuthenticationError(
                 "Invalid username or password."

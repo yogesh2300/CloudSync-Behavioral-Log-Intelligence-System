@@ -1,4 +1,4 @@
-"""Normalizer module for CloudSync behavioral log intelligence."""
+"""Normalizer module for DefenSync behavioral log intelligence."""
 
 from backend.normalizer.event_normalizer import EventNormalizer
 from backend.normalizer.event_types import (

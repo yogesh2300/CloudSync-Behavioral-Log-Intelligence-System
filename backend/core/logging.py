@@ -1,5 +1,5 @@
 """
-CloudSync Logging Configuration.
+DefenSync Logging Configuration.
 
 Provides centralized logging configuration for the entire backend.
 

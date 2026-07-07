@@ -1,10 +1,5 @@
 """
-CloudSync Centralized Exception Handling.
-
-Provides:
-- Custom application exceptions
-- Global FastAPI exception handlers
-- Consistent JSON error responses
+DefenSync Centralized Exception Handling.
 """
 
 from __future__ import annotations
@@ -19,62 +14,47 @@ from backend.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-# ==============================================================================
-# Base Exception
-# ==============================================================================
-
-class CloudSyncException(Exception):
-    """Base exception for the CloudSync application."""
+class DefenSyncException(Exception):
+    """Base exception for the DefenSync application."""
 
     def __init__(self, message: str = "An unexpected error occurred.") -> None:
         self.message = message
         super().__init__(message)
 
-    def __str__(self) -> str:
-        return self.message
 
-
-# ==============================================================================
-# Custom Exceptions
-# ==============================================================================
-
-class AuthenticationError(CloudSyncException):
+class AuthenticationError(DefenSyncException):
     def __init__(self, message: str = "Authentication failed.") -> None:
         super().__init__(message)
 
 
-class AuthorizationError(CloudSyncException):
+class AuthorizationError(DefenSyncException):
     def __init__(self, message: str = "Not authorized.") -> None:
         super().__init__(message)
 
 
-class ResourceNotFoundError(CloudSyncException):
+class ResourceNotFoundError(DefenSyncException):
     def __init__(self, message: str = "Resource not found.") -> None:
         super().__init__(message)
 
 
-class ValidationException(CloudSyncException):
+class ValidationException(DefenSyncException):
     def __init__(self, message: str = "Validation failed.") -> None:
         super().__init__(message)
 
 
-class DatabaseException(CloudSyncException):
+class DatabaseException(DefenSyncException):
     def __init__(self, message: str = "Database operation failed.") -> None:
         super().__init__(message)
 
 
-class DuplicateResourceError(CloudSyncException):
+class DuplicateResourceError(DefenSyncException):
     def __init__(self, message: str = "Resource already exists.") -> None:
         super().__init__(message)
 
 
-# ==============================================================================
-# Exception Handlers
-# ==============================================================================
-
-async def cloudsync_exception_handler(
+async def defensync_exception_handler(
     request: Request,
-    exc: CloudSyncException,
+    exc: DefenSyncException,
 ) -> JSONResponse:
 
     mapping = {
@@ -89,7 +69,9 @@ async def cloudsync_exception_handler(
     status_code = mapping.get(type(exc), status.HTTP_400_BAD_REQUEST)
 
     if isinstance(exc, DatabaseException):
-        logger.exception(exc)
+        logger.exception("Database exception on %s %s: %s", request.method, request.url.path, exc)
+    else:
+        logger.warning("Application exception on %s %s: %s", request.method, request.url.path, exc)
 
     return JSONResponse(
         status_code=status_code,
@@ -105,6 +87,7 @@ async def http_exception_handler(
     request: Request,
     exc: HTTPException,
 ) -> JSONResponse:
+    logger.warning("HTTP exception on %s %s: status=%s detail=%s", request.method, request.url.path, exc.status_code, exc.detail)
 
     return JSONResponse(
         status_code=exc.status_code,
@@ -120,6 +103,7 @@ async def validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ) -> JSONResponse:
+    logger.warning("Validation exception on %s %s: %s", request.method, request.url.path, exc.errors())
 
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -136,7 +120,7 @@ async def generic_exception_handler(
     exc: Exception,
 ) -> JSONResponse:
 
-    logger.exception("Unhandled exception", exc_info=exc)
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
 
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -148,16 +132,12 @@ async def generic_exception_handler(
     )
 
 
-# ==============================================================================
-# Registration
-# ==============================================================================
-
 def register_exception_handlers(app: FastAPI) -> None:
     """Register all application exception handlers."""
 
     app.add_exception_handler(
-        CloudSyncException,
-        cloudsync_exception_handler,
+        DefenSyncException,
+        defensync_exception_handler,
     )
 
     app.add_exception_handler(

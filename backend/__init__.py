@@ -1,1 +1,1 @@
-"""CloudSync behavioral log intelligence backend."""
+"""DefenSync behavioral log intelligence backend."""

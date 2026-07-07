@@ -1,4 +1,4 @@
-"""Health check API endpoint for CloudSync service readiness."""
+"""Health check API endpoint for DefenSync service readiness."""
 from __future__ import annotations
 
 from backend.core.logging import get_logger
@@ -30,6 +30,6 @@ def health_check(db: Session = Depends(get_db)) -> dict[str, Any]:
 
     return {
         "status": "healthy",
-        "service": "CloudSync Behavioral Log Intelligence System",
+        "service": "DefenSync Behavioral Log Intelligence System",
         "database": db_status,
     }

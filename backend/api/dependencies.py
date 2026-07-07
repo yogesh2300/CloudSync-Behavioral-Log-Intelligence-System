@@ -49,7 +49,7 @@ def get_current_admin(
     current_user: User = Depends(get_current_user)
 ) -> User:
     """Dependency to ensure the current authenticated user has administrative privileges."""
-    if getattr(current_user, "role", None) != "admin":
+    if getattr(current_user, "role", "").upper() != "ADMIN":
         raise AuthorizationError("Administrative privileges required.")
         
     return current_user
