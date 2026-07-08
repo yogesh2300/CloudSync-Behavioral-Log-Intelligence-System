@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { Activity, HardDrive, Loader2, RadioTower, Server as ServerIcon } from 'lucide-react'
 import {
   collectServer, createServer, deleteServer, getServers,
-  testServerConnection, testServerCredentials,
+  refreshServerStatus, testServerConnection, testServerCredentials,
 } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/ui/PageHeader'
@@ -13,7 +13,7 @@ import AlertBanner from '../components/ui/AlertBanner'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import DataTable from '../components/ui/DataTable'
 import { Input, Select, Textarea } from '../components/ui/Input'
-import { StatusBadge } from '../components/ui/Badge'
+import { HealthBadge } from '../components/ui/Badge'
 import ServerCard from '../components/ui/ServerCard'
 
 const emptyForm = {
@@ -43,7 +43,12 @@ function apiError(err) {
 }
 
 function connectionLabel(server) {
-  return server.connection_state || (server.status === 'online' ? 'Online' : 'Offline')
+  if (server.status === 'inactive') return 'Inactive'
+  return server.connection_state || 'Unknown'
+}
+
+function isServerOnline(server) {
+  return (server.health_status || '').toLowerCase() === 'online'
 }
 
 function StatTile({ label, value, icon: Icon, tone }) {
@@ -74,6 +79,7 @@ export default function Servers() {
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [actionId, setActionId] = useState(null)
+  const [refreshingStatus, setRefreshingStatus] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -88,7 +94,24 @@ export default function Servers() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  const refreshStatus = useCallback(async () => {
+    setRefreshingStatus(true)
+    try {
+      await refreshServerStatus()
+      setMessage('Health check queued. Results will update shortly.')
+      setTimeout(load, 1500)
+    } catch (err) {
+      setMessage(apiError(err))
+    } finally {
+      setRefreshingStatus(false)
+    }
+  }, [load])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, 30000)
+    return () => clearInterval(id)
+  }, [load])
 
   const buildTestPayload = () => {
     const payload = {
@@ -190,14 +213,15 @@ export default function Servers() {
       server.operating_system,
       server.environment,
     ].some((value) => String(value || '').toLowerCase().includes(term))
-    const state = connectionLabel(server).toLowerCase()
-    const matchesStatus = !statusFilter || state === statusFilter
+    const health = (server.health_status || 'unknown').toLowerCase()
+    const matchesStatus = !statusFilter || health === statusFilter || connectionLabel(server).toLowerCase() === statusFilter
     return matchesSearch && matchesStatus
   })
 
-  const onlineCount = servers.filter((server) => connectionLabel(server) === 'Online').length
-  const offlineCount = servers.filter((server) => connectionLabel(server) === 'Offline').length
-  const availability = servers.length ? Math.round((onlineCount / servers.length) * 100) : 0
+  const monitoredServers = servers.filter((server) => server.status !== 'inactive')
+  const onlineCount = monitoredServers.filter(isServerOnline).length
+  const offlineCount = monitoredServers.length - onlineCount
+  const availability = monitoredServers.length ? Math.round((onlineCount / monitoredServers.length) * 100) : 0
 
   const testServer = async (server) => {
     const r = await testServerConnection(server.id)
@@ -231,11 +255,16 @@ export default function Servers() {
     {
       key: 'connection_state',
       label: 'Status',
-      render: (s) => {
-        const label = connectionLabel(s)
-        const variant = label === 'Online' ? 'online' : label === 'Inactive' ? 'inactive' : 'offline'
-        return <StatusBadge status={variant}>{label}</StatusBadge>
-      },
+      render: (s) => (
+        <HealthBadge healthStatus={s.health_status || s.status}>
+          {connectionLabel(s)}
+        </HealthBadge>
+      ),
+    },
+    {
+      key: 'connection_latency_ms',
+      label: 'Latency',
+      render: (s) => (s.connection_latency_ms != null ? `${s.connection_latency_ms}ms` : '—'),
     },
     { key: 'operating_system', label: 'OS', render: (s) => s.operating_system || 'linux' },
     { key: 'environment', label: 'Environment', render: (s) => <span className="capitalize">{s.environment || 'production'}</span> },
@@ -318,11 +347,16 @@ export default function Servers() {
       <PageHeader
         title="Servers"
         subtitle="Security Monitoring"
-        actions={
-          <Button onClick={() => { setShowRegister(true); setMessage('') }}>
-            Register Server
-          </Button>
-        }
+        actions={(
+          <>
+            <Button variant="secondary" onClick={refreshStatus} disabled={refreshingStatus}>
+              {refreshingStatus ? 'Checking...' : 'Refresh Status'}
+            </Button>
+            <Button onClick={() => { setShowRegister(true); setMessage('') }}>
+              Register Server
+            </Button>
+          </>
+        )}
       />
 
       <AlertBanner message={loadError} type="error" />

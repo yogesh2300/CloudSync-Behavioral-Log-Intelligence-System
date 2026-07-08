@@ -30,6 +30,11 @@ class DashboardSummaryResponse(BaseModel):
     active_servers: int = Field(0, description="Active monitored servers")
     online_servers: int = Field(0, description="Servers with online SSH status")
     offline_servers: int = Field(0, description="Active servers currently offline")
+    healthy_servers: int = Field(0, description="Servers passing health checks")
+    servers_with_errors: int = Field(0, description="Servers with authentication or connection errors")
+    average_ssh_latency_ms: int = Field(0, description="Average SSH probe latency for online servers")
+    recently_connected: int = Field(0, description="Servers connected within the recent health window")
+    recently_disconnected: int = Field(0, description="Servers that failed health checks recently")
 
 
 def get_dashboard_service(db: Session = Depends(get_db)) -> DashboardService:

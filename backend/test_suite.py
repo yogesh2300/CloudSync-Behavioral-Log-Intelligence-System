@@ -10,6 +10,7 @@ import os
 import random
 import sys
 import unittest
+import urllib.parse
 from datetime import datetime, timezone
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -33,11 +34,11 @@ class DefenSyncTestClient:
         """Clear the current authenticated token."""
         self.token = None
 
-    def _request(self, method: str, path: str, data: dict = None, params: dict = None) -> tuple[int, dict]:
+    def _request(self, method: str, path: str, data: dict = None, params: dict = None, *, form: bool = False) -> tuple[int, dict]:
         """Send an HTTP request and return (status_code, response_json)."""
         url = f"{self.base_url}{path}"
         if params:
-            query_string = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
+            query_string = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
             if query_string:
                 url = f"{url}?{query_string}"
 
@@ -45,8 +46,12 @@ class DefenSyncTestClient:
         headers = {}
 
         if data is not None:
-            req_data = json.dumps(data).encode("utf-8")
-            headers["Content-Type"] = "application/json"
+            if form:
+                req_data = "&".join(f"{k}={v}" for k, v in data.items()).encode("utf-8")
+                headers["Content-Type"] = "application/x-www-form-urlencoded"
+            else:
+                req_data = json.dumps(data).encode("utf-8")
+                headers["Content-Type"] = "application/json"
 
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
@@ -106,7 +111,7 @@ class TestDefenSyncBackend(unittest.TestCase):
             "username": self.analyst_username,
             "password": self.analyst_password
         }
-        status_code, body = self.client._request("POST", "/api/v1/auth/token", payload)
+        status_code, body = self.client._request("POST", "/api/v1/auth/token", payload, form=True)
         self.assertEqual(status_code, 200, f"Login failed: {body}")
         self.assertIn("access_token", body)
         self.assertEqual(body.get("token_type"), "bearer")
@@ -118,7 +123,7 @@ class TestDefenSyncBackend(unittest.TestCase):
         status_code, body = self.client._request("GET", "/api/v1/auth/me")
         self.assertEqual(status_code, 200)
         self.assertEqual(body.get("username"), self.analyst_username)
-        self.assertEqual(body.get("role"), "analyst")
+        self.assertEqual(body.get("role", "").upper(), "ANALYST")
 
     def test_05_single_event_ingestion(self):
         """Test POST /events single ingestion with full validation."""

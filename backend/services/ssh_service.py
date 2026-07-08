@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import paramiko
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +83,58 @@ class SSHService:
         path = Path(temp.name)
         path.chmod(0o600)
         return path
+
+    @staticmethod
+    def probe_connectivity(config: SSHConfig) -> dict[str, Any]:
+        """Lightweight SSH probe returning health status, latency, and error details."""
+        from backend.health.status import HealthStatus
+
+        started = datetime.now(timezone.utc)
+        client = SSHClient(config)
+        try:
+            client.connect(max_retries=1)
+            client.disconnect()
+            latency_ms = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            return {
+                "health_status": HealthStatus.ONLINE,
+                "latency_ms": latency_ms,
+                "error_message": None,
+            }
+        except paramiko.AuthenticationException as exc:
+            return {
+                "health_status": HealthStatus.AUTHENTICATION_FAILED,
+                "latency_ms": None,
+                "error_message": str(exc),
+            }
+        except Exception as exc:
+            import socket
+
+            message = str(exc).lower()
+            if isinstance(exc, (TimeoutError, socket.timeout)) or "timed out" in message:
+                status = HealthStatus.TIMEOUT
+            elif isinstance(exc, paramiko.SSHException) and (
+                "authentication" in message or "auth" in message
+            ):
+                status = HealthStatus.AUTHENTICATION_FAILED
+            elif isinstance(exc, (ConnectionRefusedError, ConnectionResetError, OSError)):
+                status = HealthStatus.UNREACHABLE if "timed out" not in message else HealthStatus.TIMEOUT
+            elif "authentication" in message or "auth failed" in message:
+                status = HealthStatus.AUTHENTICATION_FAILED
+            elif "connection" in message or "refused" in message or "unreachable" in message:
+                status = HealthStatus.UNREACHABLE
+            else:
+                status = HealthStatus.OFFLINE
+            logger.debug("SSH probe failed for host=%s: %s", config.host, exc)
+            return {
+                "health_status": status,
+                "latency_ms": None,
+                "error_message": str(exc),
+            }
+
+    @staticmethod
+    def check_connectivity(config: SSHConfig) -> bool:
+        """Lightweight SSH reachability check (connect/disconnect only, no remote commands)."""
+        return SSHService.probe_connectivity(config)["health_status"] == "online"
 
     @staticmethod
     def test_config(config: SSHConfig) -> dict[str, Any]:

@@ -92,9 +92,15 @@ class ServerResponse(BaseModel):
     environment: str = "production"
     description: str | None
     status: str
+    health_status: str = "unknown"
     connection_state: str | None = None
+    connection_latency_ms: int | None = None
     last_seen: datetime | None = None
     last_connected: datetime | None
+    last_health_check: datetime | None = None
+    last_successful_collection: datetime | None = None
+    health_error_message: str | None = None
+    consecutive_failures: int = 0
     last_collection: datetime | None = None
     last_collection_status: str | None = None
     risk_score: int = 0
@@ -109,13 +115,20 @@ class ServerResponse(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def resolved_connection_state(self) -> str:
-        if self.connection_state:
-            return self.connection_state
-        if self.status == "online":
-            return "Online"
         if self.status == "inactive":
             return "Inactive"
-        return "Offline"
+        if self.connection_state:
+            return self.connection_state
+        labels = {
+            "online": "Online",
+            "offline": "Offline",
+            "connecting": "Checking",
+            "timeout": "Timeout",
+            "authentication_failed": "Authentication Failed",
+            "unreachable": "Unreachable",
+            "error": "Connection Lost",
+        }
+        return labels.get((self.health_status or "").lower(), "Unknown")
 
 
 class ServerCollectRequest(BaseModel):
@@ -154,6 +167,16 @@ def list_servers(
 ) -> Any:
     owner_id = None if is_admin(current_user) else current_user.id
     return service.list_server_rows(active_only=active_only, owner_id=owner_id)
+
+
+@router.post("/refresh-status", summary="Refresh SSH connectivity status for servers")
+def refresh_server_status(
+    server_id: str | None = Query(None),
+    current_user: User = Depends(get_current_user),
+    service: ServerService = Depends(get_server_service),
+) -> dict[str, Any]:
+    owner_id = None if is_admin(current_user) else current_user.id
+    return service.refresh_server_statuses(owner_id=owner_id, server_id=server_id)
 
 
 @router.post("/test", summary="Test SSH before saving server")

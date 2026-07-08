@@ -15,7 +15,9 @@ from backend.core.config import get_settings
 from backend.core.exceptions import register_exception_handlers
 from backend.core.logging import configure_logging, get_logger
 
+from backend.bootstrap.default_admin import ensure_default_admin
 from backend.services.scheduler_service import start_scheduler, stop_scheduler
+from backend.services.health_engine import start_health_engine, stop_health_engine
 from backend.database.connection import get_engine
 from backend.database.models import Base
 
@@ -44,11 +46,15 @@ async def lifespan(app: FastAPI):
     logger.info("SQLAlchemy metadata tables before create_all: %s", metadata_tables)
     Base.metadata.create_all(bind=get_engine())
 
+    ensure_default_admin()
+
     logger.info("Database tables verified. Registered metadata tables: %s", sorted(Base.metadata.tables.keys()))
     start_scheduler()
+    start_health_engine()
 
     yield
 
+    stop_health_engine()
     stop_scheduler()
     logger.info("Stopping DefenSync API...")
 

@@ -1,4 +1,4 @@
-"""Background scheduler — collects logs from every active server, then runs ML detection."""
+"""Background scheduler — health checks and log collection."""
 
 from __future__ import annotations
 
@@ -7,11 +7,21 @@ from backend.core.logging import get_logger
 from backend.collector.log_sources import DEFAULT_LOG_SOURCES
 from backend.database.connection import get_session
 from backend.services.detection_service import DetectionService
+from backend.services.health_engine import get_health_engine
 from backend.services.server_service import ServerService
 
 logger = get_logger(__name__)
 
 _scheduler = None
+
+
+def _health_check_job() -> None:
+    """Scheduled job: concurrent SSH health probes for all monitored servers."""
+    try:
+        stats = get_health_engine().run_cycle()
+        logger.info("Scheduled health check finished stats=%s", stats)
+    except Exception as exc:
+        logger.exception("Scheduled health check job failed: %s", exc)
 
 
 def _collect_all_job() -> None:
@@ -47,30 +57,50 @@ def _collect_all_job() -> None:
 
 
 def start_scheduler() -> None:
-    """Start APScheduler if enabled in settings."""
+    """Start APScheduler for health checks and optional log collection."""
     global _scheduler
     settings = get_settings()
-    if not settings.SCHEDULER_ENABLED:
-        logger.info("Background scheduler disabled (set SCHEDULER_ENABLED=true to enable).")
-        return
     if _scheduler is not None:
         return
 
     from apscheduler.schedulers.background import BackgroundScheduler
 
     _scheduler = BackgroundScheduler()
-    _scheduler.add_job(
-        _collect_all_job,
-        "interval",
-        minutes=settings.COLLECTION_INTERVAL_MINUTES,
-        id="defensync_collect_all",
-        replace_existing=True,
-    )
+
+    if settings.HEALTH_CHECK_ENABLED:
+        _scheduler.add_job(
+            _health_check_job,
+            "interval",
+            seconds=settings.HEALTH_CHECK_INTERVAL_SECONDS,
+            id="defensync_health_check",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info(
+            "Health check scheduler registered every %ss",
+            settings.HEALTH_CHECK_INTERVAL_SECONDS,
+        )
+
+    if settings.SCHEDULER_ENABLED:
+        _scheduler.add_job(
+            _collect_all_job,
+            "interval",
+            minutes=settings.COLLECTION_INTERVAL_MINUTES,
+            id="defensync_collect_all",
+            replace_existing=True,
+        )
+        logger.info(
+            "Collection scheduler registered every %dm",
+            settings.COLLECTION_INTERVAL_MINUTES,
+        )
+
+    if not settings.HEALTH_CHECK_ENABLED and not settings.SCHEDULER_ENABLED:
+        logger.info("Background scheduler disabled (enable HEALTH_CHECK_ENABLED or SCHEDULER_ENABLED).")
+        return
+
     _scheduler.start()
-    logger.info(
-        "DefenSync scheduler started — collecting from all active servers every %dm",
-        settings.COLLECTION_INTERVAL_MINUTES,
-    )
+    logger.info("DefenSync background scheduler started.")
 
 
 def stop_scheduler() -> None:

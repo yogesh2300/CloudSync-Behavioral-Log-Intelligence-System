@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import {
   getAlertSummary, getDashboardSummary, getEventStats, getHealth, getRecentEvents,
+  refreshServerStatus,
 } from '../api/client'
 import { useSelectedServer } from '../context/SelectedServerContext'
 import Button from '../components/ui/Button'
@@ -16,7 +17,7 @@ import Card from '../components/ui/Card'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import PageHeader from '../components/ui/PageHeader'
 import RiskWidget from '../components/ui/RiskWidget'
-import { SeverityBadge, StatusBadge } from '../components/ui/Badge'
+import { SeverityBadge, HealthBadge } from '../components/ui/Badge'
 
 const EMPTY_SUMMARY = {
   total_events: 0,
@@ -26,6 +27,11 @@ const EMPTY_SUMMARY = {
   total_servers: 0,
   online_servers: 0,
   offline_servers: 0,
+  healthy_servers: 0,
+  servers_with_errors: 0,
+  average_ssh_latency_ms: 0,
+  recently_connected: 0,
+  recently_disconnected: 0,
 }
 
 const EMPTY_STATS = {
@@ -102,13 +108,14 @@ function ActivityHeatmap({ data }) {
 }
 
 export default function Dashboard() {
-  const { selectedServerId, selectedServer, servers, isAllServers } = useSelectedServer()
+  const { selectedServerId, selectedServer, servers, isAllServers, refreshServers } = useSelectedServer()
   const [summary, setSummary] = useState(null)
   const [stats, setStats] = useState(null)
   const [recent, setRecent] = useState([])
   const [alerts, setAlerts] = useState(null)
   const [health, setHealth] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [refreshingStatus, setRefreshingStatus] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -125,12 +132,23 @@ export default function Dashboard() {
     setRecent(Array.isArray(r) ? r : [])
     setAlerts({ ...EMPTY_ALERTS, ...(a || {}) })
     setHealth(h || { database: 'unknown' })
+    await refreshServers()
     setLoading(false)
-  }, [selectedServerId])
+  }, [selectedServerId, refreshServers])
+
+  const handleRefreshStatus = useCallback(async () => {
+    setRefreshingStatus(true)
+    try {
+      await refreshServerStatus(selectedServerId || null)
+      setTimeout(load, 1500)
+    } finally {
+      setRefreshingStatus(false)
+    }
+  }, [load, selectedServerId])
 
   useEffect(() => {
     load()
-    const id = setInterval(load, 15000)
+    const id = setInterval(load, 30000)
     const onRefresh = () => load()
     window.addEventListener('defensync:data-refresh', onRefresh)
     window.addEventListener('defensync:server-changed', onRefresh)
@@ -169,7 +187,14 @@ export default function Dashboard() {
       <PageHeader
         title="DefenSync"
         subtitle={`Security Monitoring - ${scopeLabel} - ${health?.database || 'connected'} database`}
-        actions={<Button variant="secondary" onClick={load}>Refresh</Button>}
+        actions={(
+          <>
+            <Button variant="secondary" onClick={handleRefreshStatus} disabled={refreshingStatus}>
+              {refreshingStatus ? 'Checking...' : 'Refresh Status'}
+            </Button>
+            <Button variant="secondary" onClick={() => load()}>Refresh</Button>
+          </>
+        )}
       />
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
@@ -179,6 +204,14 @@ export default function Dashboard() {
         <CompactMetric label="Failed Login" value={summary.failed_logins} icon={AlertTriangle} />
         <CompactMetric label="Servers" value={summary.total_servers} icon={Server} caption={`${summary.online_servers} online`} />
         <CompactMetric label="Availability" value={`${onlineRate}%`} icon={CheckCircle2} caption={`${summary.offline_servers} offline`} />
+      </section>
+
+      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <CompactMetric label="Healthy" value={summary.healthy_servers ?? summary.online_servers} caption="Passing health checks" />
+        <CompactMetric label="Errors" value={summary.servers_with_errors ?? 0} caption="Auth / connection issues" />
+        <CompactMetric label="Avg Latency" value={`${summary.average_ssh_latency_ms ?? 0}ms`} caption="SSH probe time" />
+        <CompactMetric label="Recent Online" value={summary.recently_connected ?? 0} caption="Connected recently" />
+        <CompactMetric label="Recent Offline" value={summary.recently_disconnected ?? 0} caption="Failed recently" />
       </section>
 
       <section className="grid gap-4 xl:grid-cols-12">
@@ -275,7 +308,9 @@ export default function Dashboard() {
                     <p className="truncate text-sm font-semibold cyber-text">{server.server_name}</p>
                     <p className="truncate font-mono text-[11px] muted-text">{server.host}</p>
                   </div>
-                  <StatusBadge status={server.status}>{server.connection_state || server.status}</StatusBadge>
+                  <HealthBadge healthStatus={server.health_status || server.status}>
+                    {server.connection_state || server.status}
+                  </HealthBadge>
                 </div>
               ))}
               {!visibleServers.length && <p className="py-4 text-center text-sm muted-text">No registered servers yet.</p>}

@@ -34,6 +34,13 @@ export function SelectedServerProvider({ children }) {
 
   useEffect(() => {
     refreshServers()
+    const id = setInterval(refreshServers, 30000)
+    const onStatusRefresh = () => refreshServers()
+    window.addEventListener('defensync:status-refreshed', onStatusRefresh)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('defensync:status-refreshed', onStatusRefresh)
+    }
   }, [refreshServers])
 
   useEffect(() => {

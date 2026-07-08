@@ -60,9 +60,32 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS environment VARCHAR(20) DEFAULT 'production'"))
             conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP"))
             conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
+            conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS health_status VARCHAR(30) DEFAULT 'unknown'"))
+            conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS connection_latency_ms INTEGER"))
+            conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS last_health_check TIMESTAMP"))
+            conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS last_successful_collection TIMESTAMP"))
+            conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS health_error_message TEXT"))
+            conn.execute(text("ALTER TABLE servers ADD COLUMN IF NOT EXISTS consecutive_failures INTEGER DEFAULT 0"))
             conn.execute(text("UPDATE servers SET environment = 'production' WHERE environment IS NULL"))
             conn.execute(text("UPDATE servers SET owner_id = created_by WHERE owner_id IS NULL"))
             conn.execute(text("UPDATE servers SET last_seen = last_connected WHERE last_seen IS NULL AND last_connected IS NOT NULL"))
+            conn.execute(text("""
+                UPDATE servers
+                SET health_status = CASE
+                    WHEN status = 'online' THEN 'online'
+                    WHEN status IN ('offline', 'error') THEN status
+                    WHEN status = 'inactive' THEN 'unknown'
+                    ELSE COALESCE(health_status, 'unknown')
+                END
+            """))
+            conn.execute(text("""
+                UPDATE servers
+                SET status = CASE
+                    WHEN status = 'inactive' THEN 'inactive'
+                    ELSE 'active'
+                END
+            """))
+            conn.execute(text("UPDATE servers SET consecutive_failures = 0 WHERE consecutive_failures IS NULL"))
         if _table_exists(conn, "detections"):
             conn.execute(text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS owner_id VARCHAR(36)"))
             conn.execute(text("ALTER TABLE detections ADD COLUMN IF NOT EXISTS classification VARCHAR(20)"))

@@ -8,6 +8,13 @@ import Button from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
 import { useAuth } from '../context/AuthContext'
 
+function resolvePostLoginPath(profile, servers) {
+  const isAdmin = profile?.role?.toUpperCase() === 'ADMIN'
+  if (isAdmin) return '/admin/dashboard'
+  if (Array.isArray(servers) && servers.length > 0) return '/dashboard'
+  return '/servers/new'
+}
+
 export default function Login() {
   const { user, login } = useAuth()
   const navigate = useNavigate()
@@ -26,11 +33,11 @@ export default function Login() {
     getServers()
       .then((servers) => {
         if (cancelled) return
-        setRedirectTo(Array.isArray(servers) && servers.length > 0 ? '/' : '/servers/new')
+        setRedirectTo(resolvePostLoginPath(user, servers))
       })
       .catch(() => {
         if (cancelled) return
-        setRedirectTo('/servers/new')
+        setRedirectTo(resolvePostLoginPath(user, []))
       })
     return () => {
       cancelled = true
@@ -44,14 +51,15 @@ export default function Login() {
     setError('')
     setLoading(true)
     try {
+      let profile
       if (mode === 'register') {
         await register(username, email, password)
-        await login(username, password)
+        profile = await login(username, password)
       } else {
-        await login(username, password)
+        profile = await login(username, password)
       }
       const servers = await getServers()
-      navigate(Array.isArray(servers) && servers.length > 0 ? '/' : '/servers/new', { replace: true })
+      navigate(resolvePostLoginPath(profile, servers), { replace: true })
     } catch (err) {
       setError(err.response?.data?.detail || err.response?.data?.error || err.message || 'Authentication failed')
     } finally {

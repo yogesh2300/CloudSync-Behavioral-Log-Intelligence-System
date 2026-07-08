@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from backend.api.admin import router as admin_router
 from backend.api.alerts import router as alerts_router
 from backend.api.servers import router as servers_router
 from backend.api.auth import router as auth_router
@@ -12,6 +13,7 @@ from backend.api.dashboard import router as dashboard_router
 from backend.api.detection import router as detection_router
 from backend.api.events import router as events_router
 from backend.api.health import router as health_router
+from backend.api.server_health import router as server_health_router
 
 
 # =============================================================================
@@ -27,6 +29,12 @@ api_router = APIRouter()
 api_router.include_router(
     health_router,
     tags=["Health"],
+)
+
+api_router.include_router(
+    server_health_router,
+    prefix="/api/v1/health",
+    tags=["Server Health"],
 )
 
 # -------------------------------------------------------------------------
@@ -77,6 +85,16 @@ api_router.include_router(
     dashboard_router,
     prefix="/api/v1/dashboard",
     tags=["Dashboard"],
+)
+
+# -------------------------------------------------------------------------
+# Admin Endpoints
+# -------------------------------------------------------------------------
+
+api_router.include_router(
+    admin_router,
+    prefix="/api/v1/admin",
+    tags=["Admin"],
 )
 
 # -------------------------------------------------------------------------

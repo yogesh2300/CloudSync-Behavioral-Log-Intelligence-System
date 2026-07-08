@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  collectServer, getAnomalies, getServer, getServerLogs, getServerRisk, getServerStats, testServerConnection,
+  collectServer, getAnomalies, getServer, getServerLogs, getServerRisk, getServerStats,
+  refreshServerStatus, testServerConnection,
 } from '../api/client'
 import PageHeader from '../components/ui/PageHeader'
 import StatCard from '../components/ui/StatCard'
@@ -11,7 +12,7 @@ import AlertBanner from '../components/ui/AlertBanner'
 import LoadingSpinner from '../components/ui/LoadingSpinner'
 import DataTable from '../components/ui/DataTable'
 import RiskWidget from '../components/ui/RiskWidget'
-import { StatusBadge } from '../components/ui/Badge'
+import { HealthBadge, StatusBadge } from '../components/ui/Badge'
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -45,6 +46,7 @@ export default function ServerDetails() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [refreshingStatus, setRefreshingStatus] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -84,7 +86,24 @@ export default function ServerDetails() {
     }
   }, [serverId])
 
-  useEffect(() => { load() }, [load])
+  const refreshStatus = useCallback(async () => {
+    setRefreshingStatus(true)
+    try {
+      await refreshServerStatus(serverId)
+      setMessage('Health check queued. Results will update shortly.')
+      setTimeout(load, 1500)
+    } catch (err) {
+      setMessage(apiError(err))
+    } finally {
+      setRefreshingStatus(false)
+    }
+  }, [serverId, load])
+
+  useEffect(() => {
+    load()
+    const id = setInterval(load, 30000)
+    return () => clearInterval(id)
+  }, [load])
 
   const handleTest = async () => {
     setBusy(true)
@@ -135,11 +154,14 @@ export default function ServerDetails() {
       <PageHeader
         title={server.server_name}
         subtitle="Security Monitoring"
-        badge={<StatusBadge status={server.status} />}
+        badge={<HealthBadge healthStatus={server.health_status || server.status}>{server.connection_state}</HealthBadge>}
         actions={
           <>
             <Link to="/servers"><Button variant="secondary">Back</Button></Link>
             <Link to={`/servers/${serverId}/edit`}><Button variant="secondary">Edit</Button></Link>
+            <Button variant="secondary" onClick={refreshStatus} disabled={refreshingStatus || busy}>
+              {refreshingStatus ? 'Checking...' : 'Refresh Status'}
+            </Button>
             <Button variant="secondary" onClick={handleTest} disabled={busy}>{busy ? 'Testing...' : 'Test SSH'}</Button>
             <Button onClick={handleCollect} disabled={busy}>{busy ? 'Collecting...' : 'Collect Logs'}</Button>
           </>
@@ -179,6 +201,19 @@ export default function ServerDetails() {
             </div>
             <RiskWidget score={riskScore} label="Server Risk" size="lg" />
           </div>
+
+          <Card title="Server Health" subtitle="Latest background probe results">
+            <dl className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+              <div><dt className="text-xs font-semibold muted-text">Status</dt><dd className="mt-1"><HealthBadge healthStatus={server.health_status}>{server.connection_state}</HealthBadge></dd></div>
+              <div><dt className="text-xs font-semibold muted-text">SSH Latency</dt><dd className="cyber-text mt-1">{server.connection_latency_ms != null ? `${server.connection_latency_ms}ms` : '—'}</dd></div>
+              <div><dt className="text-xs font-semibold muted-text">Last Seen</dt><dd className="font-mono text-xs cyber-text mt-1">{server.last_seen ? new Date(server.last_seen).toLocaleString() : 'Never'}</dd></div>
+              <div><dt className="text-xs font-semibold muted-text">Last Health Check</dt><dd className="font-mono text-xs cyber-text mt-1">{server.last_health_check ? new Date(server.last_health_check).toLocaleString() : 'Pending'}</dd></div>
+              <div><dt className="text-xs font-semibold muted-text">Last Collection</dt><dd className="font-mono text-xs cyber-text mt-1">{server.last_successful_collection ? new Date(server.last_successful_collection).toLocaleString() : 'Never'}</dd></div>
+              <div><dt className="text-xs font-semibold muted-text">Collection Status</dt><dd className="cyber-text mt-1">{server.last_collection_status || '—'}</dd></div>
+              <div><dt className="text-xs font-semibold muted-text">Consecutive Failures</dt><dd className="cyber-text mt-1">{server.consecutive_failures ?? stats.consecutive_failures ?? 0}</dd></div>
+              <div className="sm:col-span-2"><dt className="text-xs font-semibold muted-text">Last Error</dt><dd className="muted-text mt-1">{server.health_error_message || stats.health_error_message || 'None'}</dd></div>
+            </dl>
+          </Card>
 
           <Card title="Server Information">
             <dl className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">

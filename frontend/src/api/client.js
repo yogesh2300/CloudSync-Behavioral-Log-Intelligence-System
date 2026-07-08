@@ -121,6 +121,19 @@ export async function getServers(activeOnly = false) {
   return data
 }
 
+export async function refreshServerStatus(serverId = null) {
+  const { data } = await api.post('/api/v1/servers/refresh-status', null, {
+    params: withServerId({}, serverId),
+  })
+  window.dispatchEvent(new CustomEvent('defensync:status-refreshed', { detail: { serverId, result: data } }))
+  return data
+}
+
+export async function getFleetHealth(serverId = null) {
+  const { data } = await api.get('/api/v1/health/servers', { params: withServerId({}, serverId) })
+  return data
+}
+
 export async function getServer(serverId) {
   const { data } = await api.get(`/api/v1/servers/${serverId}`)
   return data

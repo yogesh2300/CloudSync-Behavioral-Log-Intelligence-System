@@ -1,12 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { Cpu, HardDrive, Loader2, Network, Server, Terminal } from 'lucide-react'
 import { motion } from 'framer-motion'
-import { StatusBadge } from './Badge'
+import { HealthBadge } from './Badge'
 import Button from './Button'
 
 export default function ServerCard({ server, onOpen, onTest, onCollect, onDelete, isAdmin, busy = false }) {
   const navigate = useNavigate()
-  const isOnline = (server.connection_state || server.status || '').toLowerCase().includes('online')
+  const isOnline = (server.health_status || '').toLowerCase() === 'online'
   const risk = Number(server.risk_score || 0)
   const health = isOnline ? Math.max(62, 100 - risk) : 28
 
@@ -35,7 +35,9 @@ export default function ServerCard({ server, onOpen, onTest, onCollect, onDelete
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <StatusBadge status={isOnline ? 'online' : 'offline'}>{server.connection_state || server.status}</StatusBadge>
+            <HealthBadge healthStatus={server.health_status || server.status}>
+              {server.connection_state || server.status}
+            </HealthBadge>
             <span className="rounded-full border border-[var(--panel-border)] bg-[var(--panel-strong)] px-2.5 py-1 text-[11px] font-semibold uppercase muted-text">{server.operating_system || 'linux'}</span>
           </div>
         </div>
@@ -78,8 +80,8 @@ export default function ServerCard({ server, onOpen, onTest, onCollect, onDelete
           <p className="truncate cyber-text">{server.username}</p>
         </div>
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase muted-text">Last Seen</p>
-          <p className="truncate font-mono text-xs muted-text">{server.last_seen || server.last_connected ? new Date(server.last_seen || server.last_connected).toLocaleString() : 'Never'}</p>
+          <p className="text-[10px] font-semibold uppercase muted-text">Last Health Check</p>
+          <p className="truncate font-mono text-xs muted-text">{server.last_health_check ? new Date(server.last_health_check).toLocaleString() : 'Pending'}</p>
         </div>
       </div>
 

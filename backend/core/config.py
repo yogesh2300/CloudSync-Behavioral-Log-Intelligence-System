@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # ==========================================================================
+    # Default Admin Bootstrap
+    # ==========================================================================
+
+    DEFAULT_ADMIN_USERNAME: str = "admin"
+    DEFAULT_ADMIN_EMAIL: str = "admin@defensync.local"
+    DEFAULT_ADMIN_PASSWORD: SecretStr = SecretStr("Admin@123")
+
+    # ==========================================================================
     # CORS
     # ==========================================================================
 
@@ -91,6 +99,16 @@ class Settings(BaseSettings):
     SCHEDULER_ENABLED: bool = False
     COLLECTION_INTERVAL_MINUTES: int = 15
     COLLECTION_TAIL_LINES: int = 500
+
+    # ==========================================================================
+    # Server Health Monitoring
+    # ==========================================================================
+
+    HEALTH_CHECK_ENABLED: bool = True
+    HEALTH_CHECK_INTERVAL_SECONDS: int = 30
+    HEALTH_CHECK_TIMEOUT_SECONDS: float = 3.0
+    HEALTH_CHECK_MAX_WORKERS: int = 20
+    HEALTH_RECENT_WINDOW_SECONDS: int = 300
 
     # ==========================================================================
     # Pydantic Settings Configuration

@@ -41,7 +41,7 @@ class DashboardService:
                 server_id=server_id,
             )
             summary.update(
-                server_crud.server_summary(
+                server_crud.health_summary(
                     self._session,
                     owner_id=owner_id,
                     server_id=server_id,
@@ -85,6 +85,11 @@ class DashboardService:
             "active_servers",
             "online_servers",
             "offline_servers",
+            "healthy_servers",
+            "servers_with_errors",
+            "average_ssh_latency_ms",
+            "recently_connected",
+            "recently_disconnected",
         )
         return {key: int(summary.get(key) or 0) for key in keys}
 

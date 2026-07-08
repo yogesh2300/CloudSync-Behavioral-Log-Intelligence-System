@@ -621,6 +621,12 @@ def get_user_by_email(session: Session, email: str) -> User | None:
     return session.scalar(stmt)
 
 
+def admin_user_exists(session: Session) -> bool:
+    """Return True if at least one user with the ADMIN role exists."""
+    stmt = select(func.count(User.id)).where(func.upper(User.role) == "ADMIN")
+    return (session.scalar(stmt) or 0) > 0
+
+
 def list_users(session: Session) -> list[User]:
     """Return all users ordered by creation time."""
     return list(session.scalars(select(User).order_by(desc(User.created_at))).all())

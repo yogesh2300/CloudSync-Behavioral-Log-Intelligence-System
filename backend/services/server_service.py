@@ -14,7 +14,11 @@ from backend.core.exceptions import ResourceNotFoundError, ValidationException
 from backend.core.logging import get_logger
 from backend.database import server_crud
 from backend.database.models import Server
+from backend.health.status import HealthStatus, health_label
+from backend.health.types import HealthCheckResult
 from backend.services.detection_service import DetectionService
+from backend.services.health_engine import get_health_engine
+from backend.services.health_service import HealthService
 from backend.services.pipeline_service import PipelineService
 from backend.services.ssh_service import SSHService
 
@@ -40,6 +44,7 @@ class ServerService:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._health = HealthService(session)
 
     def list_servers(self, *, active_only: bool = False, owner_id: str | None = None) -> list[Server]:
         return server_crud.list_servers(self._session, active_only=active_only, owner_id=owner_id)
@@ -81,11 +86,13 @@ class ServerService:
                 "environment": self._normalize_environment(environment),
                 "description": description,
                 "status": "active",
+                "health_status": HealthStatus.UNKNOWN,
                 "owner_id": created_by,
                 "created_by": created_by,
             },
         )
         self._session.commit()
+        get_health_engine().trigger_async(server_id=server.id)
         return server
 
     def update_server(self, server_id: str, updates: dict[str, Any]) -> Server:
@@ -108,6 +115,7 @@ class ServerService:
 
         if "status" in payload and payload["status"] == "inactive":
             payload["status"] = "inactive"
+            payload["health_status"] = HealthStatus.UNKNOWN
         elif "status" in payload and payload["status"] == "active":
             payload["status"] = "active"
 
@@ -118,6 +126,8 @@ class ServerService:
 
         updated = server_crud.update_server(self._session, server, payload)
         self._session.commit()
+        if updated.status != "inactive":
+            get_health_engine().trigger_async(server_id=updated.id)
         return updated
 
     def list_server_rows(self, *, active_only: bool = False, owner_id: str | None = None) -> list[dict[str, Any]]:
@@ -131,29 +141,46 @@ class ServerService:
         server_crud.delete_server(self._session, server)
         self._session.commit()
 
+    def refresh_server_statuses(
+        self,
+        *,
+        owner_id: str | None = None,
+        server_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Queue a non-blocking health check cycle."""
+        return get_health_engine().trigger_async(owner_id=owner_id, server_id=server_id)
+
     def test_connection(self, server_id: str) -> dict[str, Any]:
         server = self.get_server(server_id)
         result = SSHService.test_connection(server)
         if server.status == "inactive":
-            status = "inactive"
+            health_status = HealthStatus.UNKNOWN
         elif result["success"]:
-            status = "online"
+            health_status = HealthStatus.ONLINE
         else:
-            status = "offline"
+            health_status = HealthStatus.OFFLINE
+
         updates: dict[str, Any] = {}
         if result.get("operating_system"):
             updates["operating_system"] = result["operating_system"]
         if updates:
             server_crud.update_server(self._session, server, updates)
-        server_crud.set_server_status(
+
+        server_crud.apply_health_result(
             self._session,
             server,
-            status=status,
-            connected=result["success"],
+            HealthCheckResult(
+                server_id=server.id,
+                health_status=health_status,
+                latency_ms=result.get("latency_ms"),
+                error_message=None if result["success"] else result.get("message"),
+                checked_at=datetime.now(timezone.utc),
+            ),
         )
         self._session.commit()
-        result["status"] = status
-        result["connection_state"] = "Online" if status == "online" else "Offline" if status != "inactive" else "Inactive"
+        result["status"] = server.status
+        result["health_status"] = health_status
+        result["connection_state"] = health_label(health_status)
         return result
 
     def test_credentials(
@@ -208,15 +235,18 @@ class ServerService:
             stats["duration_ms"] = duration_ms
             stats["server_id"] = server.id
             stats["collected_events"] = stats.get("inserted", 0)
-            success = not any(e.get("stage") == "collect" for e in stats.get("errors", []))
-            stats["success"] = success and stats.get("failed", 0) == 0
+            ssh_failed = any(e.get("stage") == "collect" for e in stats.get("errors", []))
+            stats["success"] = not ssh_failed and stats.get("failed", 0) == 0
 
-            server_crud.set_server_status(
-                self._session,
-                server,
-                status="online" if stats["success"] else "error",
-                connected=stats["success"],
-            )
+            if stats["success"]:
+                self._health.record_collection_success(server)
+            else:
+                self._health.record_collection_failure(
+                    server,
+                    error_message="Collection pipeline failed.",
+                    ssh_failed=ssh_failed,
+                )
+
             server_crud.complete_collection_run(
                 self._session,
                 run,
@@ -238,7 +268,11 @@ class ServerService:
             return stats
         except Exception as exc:
             logger.exception("Collection failed for server=%s", server_id)
-            server_crud.set_server_status(self._session, server, status="error")
+            self._health.record_collection_failure(
+                server,
+                error_message=str(exc),
+                ssh_failed=True,
+            )
             server_crud.complete_collection_run(
                 self._session,
                 run,
@@ -282,8 +316,14 @@ class ServerService:
             "host": server.host,
             "port": server.port,
             "status": server.status,
+            "health_status": server.health_status,
+            "connection_latency_ms": server.connection_latency_ms,
             "last_connected": server.last_connected,
             "last_seen": server.last_seen or server.last_connected,
+            "last_health_check": server.last_health_check,
+            "last_successful_collection": server.last_successful_collection,
+            "health_error_message": server.health_error_message,
+            "consecutive_failures": server.consecutive_failures,
             "event_count": server_crud.count_events_for_server(self._session, server.id),
             "recent_collections": [
                 {
@@ -300,6 +340,7 @@ class ServerService:
     def _server_to_dict(self, server: Server) -> dict[str, Any]:
         latest = server_crud.latest_collection_run(self._session, server.id)
         risk_score = server_crud.average_risk_for_server(self._session, server.id)
+        health = server.health_status or HealthStatus.UNKNOWN
         return {
             "id": server.id,
             "server_name": server.server_name,
@@ -312,9 +353,15 @@ class ServerService:
             "description": server.description,
             "owner_id": server.owner_id or server.created_by,
             "status": server.status,
-            "connection_state": "Online" if server.status == "online" else "Inactive" if server.status == "inactive" else "Offline",
+            "health_status": health,
+            "connection_state": health_label(health) if server.status != "inactive" else "Inactive",
+            "connection_latency_ms": server.connection_latency_ms,
             "last_seen": server.last_seen or server.last_connected,
             "last_connected": server.last_connected,
+            "last_health_check": server.last_health_check,
+            "last_successful_collection": server.last_successful_collection,
+            "health_error_message": server.health_error_message,
+            "consecutive_failures": server.consecutive_failures or 0,
             "last_collection": latest.completed_at or latest.started_at if latest else None,
             "last_collection_status": latest.status if latest else None,
             "risk_score": risk_score,
