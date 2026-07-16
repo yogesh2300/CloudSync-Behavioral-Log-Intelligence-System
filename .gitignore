@@ -61,3 +61,26 @@ datasets/**/raw/
 datasets/**/*.zip
 datasets/**/*.tar
 datasets/**/*.tar.gz
+
+
+# Public research datasets
+datasets/**/raw/
+datasets/**/preprocessed/
+datasets/**/*.csv
+datasets/**/*.npz
+datasets/**/*.log
+datasets/**/*.txt
+datasets/**/*.zip
+datasets/**/*.tar
+datasets/**/*.tar.gz
+
+# Keep dataset documentation
+!datasets/**/README.md
+
+# Generated behavioral data
+datasets/behavioral/generated_behavioral_telemetry.csv
+datasets/behavioral/behavioral_telemetry.csv
+
+# Notebook cache
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
