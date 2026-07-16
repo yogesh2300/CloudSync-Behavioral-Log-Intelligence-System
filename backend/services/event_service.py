@@ -113,6 +113,16 @@ class EventService:
         search: str | None = None,
         min_risk_score: int | None = None,
         max_risk_score: int | None = None,
+        source_type: str | None = None,
+        provider: str | None = None,
+        data_origin: str | None = None,
+        dataset_name: str | None = None,
+        original_label: str | None = None,
+        parser_status: str | None = None,
+        behavioral_classification: str | None = None,
+        minimum_behavioral_risk: int | None = None,
+        actor_id: str | None = None,
+        session_id: str | None = None,
         sort_order: Literal["newest", "oldest"] = "newest",
     ) -> list[SecurityEvent]:
         """Query, filter, search, and paginate security events."""
@@ -140,6 +150,16 @@ class EventService:
             search=search,
             min_risk_score=min_risk_score,
             max_risk_score=max_risk_score,
+            source_type=source_type,
+            provider=provider,
+            data_origin=data_origin,
+            dataset_name=dataset_name,
+            original_label=original_label,
+            parser_status=parser_status,
+            behavioral_classification=behavioral_classification,
+            minimum_behavioral_risk=minimum_behavioral_risk,
+            actor_id=actor_id,
+            session_id=session_id,
             sort_order=sort_order,
         )
 
@@ -159,6 +179,16 @@ class EventService:
         search: str | None = None,
         min_risk_score: int | None = None,
         max_risk_score: int | None = None,
+        source_type: str | None = None,
+        provider: str | None = None,
+        data_origin: str | None = None,
+        dataset_name: str | None = None,
+        original_label: str | None = None,
+        parser_status: str | None = None,
+        behavioral_classification: str | None = None,
+        minimum_behavioral_risk: int | None = None,
+        actor_id: str | None = None,
+        session_id: str | None = None,
     ) -> int:
         """Return the total number of events matching the given filter criteria."""
         return crud.count_query_events(
@@ -176,6 +206,16 @@ class EventService:
             search=search,
             min_risk_score=min_risk_score,
             max_risk_score=max_risk_score,
+            source_type=source_type,
+            provider=provider,
+            data_origin=data_origin,
+            dataset_name=dataset_name,
+            original_label=original_label,
+            parser_status=parser_status,
+            behavioral_classification=behavioral_classification,
+            minimum_behavioral_risk=minimum_behavioral_risk,
+            actor_id=actor_id,
+            session_id=session_id,
         )
 
     def search_events(

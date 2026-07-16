@@ -6,10 +6,12 @@ from fastapi import APIRouter
 
 from backend.api.admin import router as admin_router
 from backend.api.alerts import router as alerts_router
+from backend.api.behavioral import router as behavioral_router
 from backend.api.servers import router as servers_router
 from backend.api.auth import router as auth_router
 from backend.api.collection import router as collection_router
 from backend.api.dashboard import router as dashboard_router
+from backend.api.datasets import router as datasets_router
 from backend.api.detection import router as detection_router
 from backend.api.events import router as events_router
 from backend.api.health import router as health_router
@@ -115,6 +117,22 @@ api_router.include_router(
     detection_router,
     prefix="/api/v1/detection",
     tags=["Detection"],
+)
+
+# -------------------------------------------------------------------------
+# Public Dataset Import Endpoints
+# -------------------------------------------------------------------------
+
+api_router.include_router(
+    datasets_router,
+    prefix="/api/v1/datasets",
+    tags=["Datasets"],
+)
+
+api_router.include_router(
+    behavioral_router,
+    prefix="/api/v1/behavioral",
+    tags=["Behavioral"],
 )
 
 __all__ = ["api_router"]

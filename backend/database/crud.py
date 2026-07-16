@@ -281,6 +281,16 @@ def _event_filter_clauses(
     search: str | None = None,
     min_risk_score: int | None = None,
     max_risk_score: int | None = None,
+    source_type: str | None = None,
+    provider: str | None = None,
+    data_origin: str | None = None,
+    dataset_name: str | None = None,
+    original_label: str | None = None,
+    parser_status: str | None = None,
+    behavioral_classification: str | None = None,
+    minimum_behavioral_risk: int | None = None,
+    actor_id: str | None = None,
+    session_id: str | None = None,
 ) -> list[ColumnElement[bool]]:
     """Build shared WHERE clauses for SecurityEvent queries."""
     clauses: list[ColumnElement[bool]] = []
@@ -309,6 +319,26 @@ def _event_filter_clauses(
         clauses.append(SecurityEvent.risk_score >= min_risk_score)
     if max_risk_score is not None:
         clauses.append(SecurityEvent.risk_score <= max_risk_score)
+    if source_type:
+        clauses.append(SecurityEvent.source_type == source_type.upper())
+    if provider:
+        clauses.append(SecurityEvent.provider == provider.upper())
+    if data_origin:
+        clauses.append(SecurityEvent.data_origin == data_origin.upper())
+    if dataset_name:
+        clauses.append(SecurityEvent.dataset_name == dataset_name)
+    if original_label:
+        clauses.append(SecurityEvent.original_label == original_label.upper())
+    if parser_status:
+        clauses.append(SecurityEvent.parser_status == parser_status.upper())
+    if behavioral_classification:
+        clauses.append(SecurityEvent.behavioral_classification == behavioral_classification.upper())
+    if minimum_behavioral_risk is not None:
+        clauses.append(SecurityEvent.behavioral_risk_score >= minimum_behavioral_risk)
+    if actor_id:
+        clauses.append(SecurityEvent.actor_id == actor_id)
+    if session_id:
+        clauses.append(SecurityEvent.session_id == session_id)
     if search:
         pattern = f"%{search.strip()}%"
         clauses.append(
@@ -356,6 +386,16 @@ def query_events(
     search: str | None = None,
     min_risk_score: int | None = None,
     max_risk_score: int | None = None,
+    source_type: str | None = None,
+    provider: str | None = None,
+    data_origin: str | None = None,
+    dataset_name: str | None = None,
+    original_label: str | None = None,
+    parser_status: str | None = None,
+    behavioral_classification: str | None = None,
+    minimum_behavioral_risk: int | None = None,
+    actor_id: str | None = None,
+    session_id: str | None = None,
     sort_order: str = "newest",
 ) -> list[SecurityEvent]:
     """Query, filter, search, and paginate security events."""
@@ -373,6 +413,16 @@ def query_events(
         search=search,
         min_risk_score=min_risk_score,
         max_risk_score=max_risk_score,
+        source_type=source_type,
+        provider=provider,
+        data_origin=data_origin,
+        dataset_name=dataset_name,
+        original_label=original_label,
+        parser_status=parser_status,
+        behavioral_classification=behavioral_classification,
+        minimum_behavioral_risk=minimum_behavioral_risk,
+        actor_id=actor_id,
+        session_id=session_id,
     )
     stmt = _apply_event_filters(select(SecurityEvent), filters)
     stmt = _apply_event_sort(stmt, sort_order=sort_order)
@@ -396,6 +446,16 @@ def count_query_events(
     search: str | None = None,
     min_risk_score: int | None = None,
     max_risk_score: int | None = None,
+    source_type: str | None = None,
+    provider: str | None = None,
+    data_origin: str | None = None,
+    dataset_name: str | None = None,
+    original_label: str | None = None,
+    parser_status: str | None = None,
+    behavioral_classification: str | None = None,
+    minimum_behavioral_risk: int | None = None,
+    actor_id: str | None = None,
+    session_id: str | None = None,
 ) -> int:
     """Return the total number of security events matching filter criteria."""
     filters = _event_filter_clauses(
@@ -412,6 +472,16 @@ def count_query_events(
         search=search,
         min_risk_score=min_risk_score,
         max_risk_score=max_risk_score,
+        source_type=source_type,
+        provider=provider,
+        data_origin=data_origin,
+        dataset_name=dataset_name,
+        original_label=original_label,
+        parser_status=parser_status,
+        behavioral_classification=behavioral_classification,
+        minimum_behavioral_risk=minimum_behavioral_risk,
+        actor_id=actor_id,
+        session_id=session_id,
     )
     stmt = _apply_event_filters(select(func.count()).select_from(SecurityEvent), filters)
     return session.scalar(stmt) or 0
@@ -550,6 +620,29 @@ def _to_model(event: Mapping[str, Any]) -> SecurityEvent:
         session_duration=payload.get("session_duration"),
         commands_executed=payload.get("commands_executed"),
         network_connections=payload.get("network_connections"),
+        source_type=payload.get("source_type") or "LINUX",
+        provider=payload.get("provider"),
+        data_origin=payload.get("data_origin") or "LIVE_LINUX",
+        dataset_name=payload.get("dataset_name"),
+        is_labelled=bool(payload.get("is_labelled", False)),
+        original_label=payload.get("original_label"),
+        actor_id=payload.get("actor_id"),
+        resource_id=payload.get("resource_id"),
+        resource_type=payload.get("resource_type"),
+        operation=payload.get("operation"),
+        parser_status=payload.get("parser_status") or "PARSED",
+        session_id=payload.get("session_id"),
+        typing_speed_cpm=payload.get("typing_speed_cpm"),
+        command_rate_per_minute=payload.get("command_rate_per_minute"),
+        command_error_rate=payload.get("command_error_rate"),
+        idle_time_seconds=payload.get("idle_time_seconds"),
+        repeated_command_ratio=payload.get("repeated_command_ratio"),
+        session_duration_minutes=payload.get("session_duration_minutes"),
+        login_hour=payload.get("login_hour"),
+        behavioral_risk_score=payload.get("behavioral_risk_score"),
+        behavioral_classification=payload.get("behavioral_classification"),
+        risk_reasons=payload.get("risk_reasons"),
+        baseline_version=payload.get("baseline_version"),
     )
 
 
@@ -592,6 +685,29 @@ def _normalize_payload(event: Mapping[str, Any]) -> dict[str, Any]:
         "session_duration": payload.get("session_duration"),
         "commands_executed": payload.get("commands_executed"),
         "network_connections": payload.get("network_connections"),
+        "source_type": (payload.get("source_type") or metadata.get("source_type") or "LINUX").upper(),
+        "provider": (payload.get("provider") or metadata.get("provider")),
+        "data_origin": (payload.get("data_origin") or metadata.get("data_origin") or "LIVE_LINUX").upper(),
+        "dataset_name": payload.get("dataset_name") or metadata.get("dataset_name"),
+        "is_labelled": bool(payload.get("is_labelled", metadata.get("is_labelled", False))),
+        "original_label": payload.get("original_label") or metadata.get("original_label"),
+        "actor_id": payload.get("actor_id") or metadata.get("actor_id"),
+        "resource_id": payload.get("resource_id") or metadata.get("resource_id"),
+        "resource_type": payload.get("resource_type") or metadata.get("resource_type"),
+        "operation": payload.get("operation") or metadata.get("operation"),
+        "parser_status": (payload.get("parser_status") or metadata.get("parser_status") or "PARSED").upper(),
+        "session_id": payload.get("session_id") or metadata.get("session_id"),
+        "typing_speed_cpm": payload.get("typing_speed_cpm"),
+        "command_rate_per_minute": payload.get("command_rate_per_minute"),
+        "command_error_rate": payload.get("command_error_rate"),
+        "idle_time_seconds": payload.get("idle_time_seconds"),
+        "repeated_command_ratio": payload.get("repeated_command_ratio"),
+        "session_duration_minutes": payload.get("session_duration_minutes"),
+        "login_hour": payload.get("login_hour"),
+        "behavioral_risk_score": payload.get("behavioral_risk_score"),
+        "behavioral_classification": payload.get("behavioral_classification"),
+        "risk_reasons": payload.get("risk_reasons"),
+        "baseline_version": payload.get("baseline_version"),
     }
 
 

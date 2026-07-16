@@ -111,6 +111,21 @@ class Settings(BaseSettings):
     HEALTH_RECENT_WINDOW_SECONDS: int = 300
 
     # ==========================================================================
+    # Public Dataset Imports
+    # ==========================================================================
+
+    DATASET_ROOT: str = "datasets"
+    OPENSTACK_DATASET_PATH: str = "OpenStack"
+    DATASET_IMPORT_BATCH_SIZE: int = 500
+    DATASET_IMPORT_MAX_RECORDS: int = 10000
+    DATASET_IMPORT_ENABLED: bool = True
+    BEHAVIORAL_DATASET_PATH: str = "behavioral"
+    BEHAVIORAL_IMPORT_BATCH_SIZE: int = 500
+    BEHAVIORAL_IMPORT_MAX_RECORDS: int = 10000
+    BEHAVIORAL_MIN_BASELINE_SAMPLES: int = 10
+    BEHAVIORAL_BASELINE_UPDATE_MAX_RISK: int = 29
+
+    # ==========================================================================
     # Pydantic Settings Configuration
     # ==========================================================================
 

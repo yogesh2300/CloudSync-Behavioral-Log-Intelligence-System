@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -105,6 +105,92 @@ class Event(Base):
     session_duration = Column(Float, nullable=True)
     commands_executed = Column(Integer, nullable=True)
     network_connections = Column(Integer, nullable=True)
+    source_type = Column(String(20), nullable=False, default="LINUX", index=True)
+    provider = Column(String(30), nullable=True, index=True)
+    data_origin = Column(String(30), nullable=False, default="LIVE_LINUX", index=True)
+    dataset_name = Column(String(80), nullable=True, index=True)
+    is_labelled = Column(Boolean, nullable=False, default=False)
+    original_label = Column(String(30), nullable=True, index=True)
+    actor_id = Column(String(255), nullable=True)
+    resource_id = Column(String(255), nullable=True)
+    resource_type = Column(String(80), nullable=True)
+    operation = Column(Text, nullable=True)
+    parser_status = Column(String(20), nullable=False, default="PARSED", index=True)
+    session_id = Column(String(120), nullable=True, index=True)
+    typing_speed_cpm = Column(Float, nullable=True)
+    command_rate_per_minute = Column(Float, nullable=True)
+    command_error_rate = Column(Float, nullable=True)
+    idle_time_seconds = Column(Float, nullable=True)
+    repeated_command_ratio = Column(Float, nullable=True)
+    session_duration_minutes = Column(Float, nullable=True)
+    login_hour = Column(Integer, nullable=True)
+    behavioral_risk_score = Column(Integer, nullable=True, index=True)
+    behavioral_classification = Column(String(40), nullable=True, index=True)
+    risk_reasons = Column(Text, nullable=True)
+    baseline_version = Column(Integer, nullable=True)
+
+
+class DatasetImport(Base):
+    """Track bounded public dataset import runs."""
+    __tablename__ = "dataset_imports"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "dataset_name", "source_file_hash", name="uq_dataset_import_owner_file"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(String(36), nullable=False, index=True)
+    dataset_name = Column(String(80), nullable=False, index=True)
+    dataset_version = Column(String(80), nullable=True)
+    source_file = Column(String(500), nullable=False)
+    source_file_hash = Column(String(64), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default="PENDING", index=True)
+    total_records_discovered = Column(Integer, nullable=False, default=0)
+    records_processed = Column(Integer, nullable=False, default=0)
+    records_imported = Column(Integer, nullable=False, default=0)
+    records_skipped = Column(Integer, nullable=False, default=0)
+    records_failed = Column(Integer, nullable=False, default=0)
+    batch_size = Column(Integer, nullable=False, default=500)
+    import_limit = Column(Integer, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class BehaviorProfile(Base):
+    """Per-user aggregate behavioral baseline; never stores keystroke content."""
+    __tablename__ = "behavior_profiles"
+    __table_args__ = (
+        UniqueConstraint("owner_id", "identity_key", "server_id", name="uq_behavior_profile_owner_identity_server"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    owner_id = Column(String(36), nullable=False, index=True)
+    identity_key = Column(String(255), nullable=False, index=True)
+    user_id = Column(String(255), nullable=True, index=True)
+    linux_username = Column(String(255), nullable=True)
+    server_id = Column(String(36), nullable=True, index=True)
+    average_typing_speed = Column(Float, nullable=True)
+    std_typing_speed = Column(Float, nullable=True)
+    average_command_rate = Column(Float, nullable=True)
+    std_command_rate = Column(Float, nullable=True)
+    average_command_error_rate = Column(Float, nullable=True)
+    std_command_error_rate = Column(Float, nullable=True)
+    average_idle_time = Column(Float, nullable=True)
+    std_idle_time = Column(Float, nullable=True)
+    average_repeated_command_ratio = Column(Float, nullable=True)
+    std_repeated_command_ratio = Column(Float, nullable=True)
+    average_session_duration = Column(Float, nullable=True)
+    std_session_duration = Column(Float, nullable=True)
+    usual_login_start = Column(Integer, nullable=True)
+    usual_login_end = Column(Integer, nullable=True)
+    profile_sample_count = Column(Integer, nullable=False, default=0)
+    baseline_version = Column(Integer, nullable=False, default=0)
+    status = Column(String(30), nullable=False, default="INSUFFICIENT_DATA", index=True)
+    last_updated = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
 
 class Alert(Base):
@@ -150,3 +236,5 @@ MLPrediction = Detection
 Index("ix_events_user_time", Event.username, Event.timestamp)
 Index("ix_events_severity_time", Event.severity, Event.timestamp)
 Index("ix_events_server_time", Event.server_id, Event.timestamp)
+Index("ix_events_cloud_dataset_time", Event.source_type, Event.provider, Event.dataset_name, Event.timestamp)
+Index("ix_events_behavior_identity_time", Event.actor_id, Event.server_id, Event.timestamp)

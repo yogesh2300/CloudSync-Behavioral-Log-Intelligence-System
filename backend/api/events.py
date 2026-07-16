@@ -44,6 +44,29 @@ class SecurityEventResponse(BaseModel):
     message: str = Field(..., description="Human-readable event summary or log text")
     raw_log: str | None = Field(None, description="Original collected log line")
     normalized_data: str | None = Field(None, description="JSON normalized metadata for this event")
+    source_type: str = Field("LINUX", description="Event source type, e.g. LINUX or CLOUD")
+    provider: str | None = Field(None, description="Cloud provider when source_type is CLOUD")
+    data_origin: str = Field("LIVE_LINUX", description="Origin of the record, e.g. LIVE_LINUX or PUBLIC_DATASET")
+    dataset_name: str | None = Field(None, description="Public dataset name for dataset records")
+    is_labelled: bool = Field(False, description="Whether a trusted dataset label is available")
+    original_label: str | None = Field(None, description="Original dataset label, when available")
+    actor_id: str | None = Field(None, description="Cloud actor/user identifier when available")
+    resource_id: str | None = Field(None, description="Cloud resource identifier when available")
+    resource_type: str | None = Field(None, description="Cloud resource/service type when available")
+    operation: str | None = Field(None, description="Cloud operation or API action when available")
+    parser_status: str = Field("PARSED", description="Parser status: PARSED, PARTIAL, or FAILED")
+    session_id: str | None = None
+    typing_speed_cpm: float | None = None
+    command_rate_per_minute: float | None = None
+    command_error_rate: float | None = None
+    idle_time_seconds: float | None = None
+    repeated_command_ratio: float | None = None
+    session_duration_minutes: float | None = None
+    login_hour: int | None = None
+    behavioral_risk_score: int | None = None
+    behavioral_classification: str | None = None
+    risk_reasons: str | None = None
+    baseline_version: int | None = None
 
     model_config = {"from_attributes": True}
 
@@ -143,6 +166,16 @@ def query_events(
     source_ip: str | None = Query(None, description="Filter by originating source IP"),
     hostname: str | None = Query(None, description="Filter by originating hostname"),
     server_id: str | None = Query(None, description="Filter by monitored server ID"),
+    source_type: str | None = Query(None, description="Filter by source type, e.g. CLOUD"),
+    provider: str | None = Query(None, description="Filter by provider, e.g. OPENSTACK"),
+    data_origin: str | None = Query(None, description="Filter by data origin, e.g. PUBLIC_DATASET"),
+    dataset_name: str | None = Query(None, description="Filter by dataset name"),
+    original_label: str | None = Query(None, description="Filter by original dataset label"),
+    parser_status: str | None = Query(None, description="Filter by parser status"),
+    behavioral_classification: str | None = Query(None, description="Filter by behavioral classification"),
+    minimum_behavioral_risk: int | None = Query(None, ge=0, le=100, description="Minimum behavioral risk"),
+    actor_id: str | None = Query(None, description="Filter by behavioral actor/user ID"),
+    session_id: str | None = Query(None, description="Filter by behavioral session ID"),
     search: str | None = Query(None, description="Search message, username, hostname, IP, and log text"),
     start_time: datetime | None = Query(None, description="Filter events after this UTC timestamp"),
     end_time: datetime | None = Query(None, description="Filter events before this UTC timestamp"),
@@ -166,6 +199,16 @@ def query_events(
         hostname=hostname,
         server_id=scoped_server_id,
         owner_id=owner_id,
+        source_type=source_type,
+        provider=provider,
+        data_origin=data_origin,
+        dataset_name=dataset_name,
+        original_label=original_label,
+        parser_status=parser_status,
+        behavioral_classification=behavioral_classification,
+        minimum_behavioral_risk=minimum_behavioral_risk,
+        actor_id=actor_id,
+        session_id=session_id,
         search=search,
         start_time=start_time,
         end_time=end_time,

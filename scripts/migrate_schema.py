@@ -44,7 +44,115 @@ def migrate() -> None:
             conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS session_duration DOUBLE PRECISION"))
             conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS commands_executed INTEGER"))
             conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS network_connections INTEGER"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS source_type VARCHAR(20) NOT NULL DEFAULT 'LINUX'"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS provider VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS data_origin VARCHAR(30) NOT NULL DEFAULT 'LIVE_LINUX'"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS dataset_name VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS is_labelled BOOLEAN NOT NULL DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS original_label VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS actor_id VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS resource_id VARCHAR(255)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS resource_type VARCHAR(80)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS operation TEXT"))
+            conn.execute(text("ALTER TABLE events ALTER COLUMN operation TYPE TEXT"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS parser_status VARCHAR(20) NOT NULL DEFAULT 'PARSED'"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS session_id VARCHAR(120)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS typing_speed_cpm DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS command_rate_per_minute DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS command_error_rate DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS idle_time_seconds DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS repeated_command_ratio DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS session_duration_minutes DOUBLE PRECISION"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS login_hour INTEGER"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS behavioral_risk_score INTEGER"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS behavioral_classification VARCHAR(40)"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS risk_reasons TEXT"))
+            conn.execute(text("ALTER TABLE events ADD COLUMN IF NOT EXISTS baseline_version INTEGER"))
             conn.execute(text("UPDATE events SET hash = md5(raw_log || event_id) WHERE hash IS NULL"))
+            conn.execute(text("UPDATE events SET source_type = 'LINUX' WHERE source_type IS NULL"))
+            conn.execute(text("UPDATE events SET data_origin = 'LIVE_LINUX' WHERE data_origin IS NULL"))
+            conn.execute(text("UPDATE events SET is_labelled = FALSE WHERE is_labelled IS NULL"))
+            conn.execute(text("UPDATE events SET parser_status = 'PARSED' WHERE parser_status IS NULL"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_source_type ON events(source_type)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_provider ON events(provider)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_dataset_name ON events(dataset_name)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_original_label ON events(original_label)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_parser_status ON events(parser_status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_cloud_dataset_time ON events(source_type, provider, dataset_name, timestamp)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_session_id ON events(session_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_behavioral_risk_score ON events(behavioral_risk_score)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_behavioral_classification ON events(behavioral_classification)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_events_behavior_identity_time ON events(actor_id, server_id, timestamp)"))
+
+        if not _table_exists(conn, "dataset_imports"):
+            conn.execute(text("""
+                CREATE TABLE dataset_imports (
+                    id VARCHAR(36) PRIMARY KEY,
+                    owner_id VARCHAR(36) NOT NULL,
+                    dataset_name VARCHAR(80) NOT NULL,
+                    dataset_version VARCHAR(80),
+                    source_file VARCHAR(500) NOT NULL,
+                    source_file_hash VARCHAR(64) NOT NULL,
+                    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                    total_records_discovered INTEGER NOT NULL DEFAULT 0,
+                    records_processed INTEGER NOT NULL DEFAULT 0,
+                    records_imported INTEGER NOT NULL DEFAULT 0,
+                    records_skipped INTEGER NOT NULL DEFAULT 0,
+                    records_failed INTEGER NOT NULL DEFAULT 0,
+                    batch_size INTEGER NOT NULL DEFAULT 500,
+                    import_limit INTEGER,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    error_message TEXT,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_dataset_import_owner_file UNIQUE(owner_id, dataset_name, source_file_hash)
+                )
+            """))
+        if _table_exists(conn, "dataset_imports"):
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_dataset_imports_owner_id ON dataset_imports(owner_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_dataset_imports_dataset_name ON dataset_imports(dataset_name)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_dataset_imports_status ON dataset_imports(status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_dataset_imports_source_file_hash ON dataset_imports(source_file_hash)"))
+
+        if not _table_exists(conn, "behavior_profiles"):
+            conn.execute(text("""
+                CREATE TABLE behavior_profiles (
+                    id VARCHAR(36) PRIMARY KEY,
+                    owner_id VARCHAR(36) NOT NULL,
+                    identity_key VARCHAR(255) NOT NULL,
+                    user_id VARCHAR(255),
+                    linux_username VARCHAR(255),
+                    server_id VARCHAR(36),
+                    average_typing_speed DOUBLE PRECISION,
+                    std_typing_speed DOUBLE PRECISION,
+                    average_command_rate DOUBLE PRECISION,
+                    std_command_rate DOUBLE PRECISION,
+                    average_command_error_rate DOUBLE PRECISION,
+                    std_command_error_rate DOUBLE PRECISION,
+                    average_idle_time DOUBLE PRECISION,
+                    std_idle_time DOUBLE PRECISION,
+                    average_repeated_command_ratio DOUBLE PRECISION,
+                    std_repeated_command_ratio DOUBLE PRECISION,
+                    average_session_duration DOUBLE PRECISION,
+                    std_session_duration DOUBLE PRECISION,
+                    usual_login_start INTEGER,
+                    usual_login_end INTEGER,
+                    profile_sample_count INTEGER NOT NULL DEFAULT 0,
+                    baseline_version INTEGER NOT NULL DEFAULT 0,
+                    status VARCHAR(30) NOT NULL DEFAULT 'INSUFFICIENT_DATA',
+                    last_updated TIMESTAMP,
+                    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+                    CONSTRAINT uq_behavior_profile_owner_identity_server UNIQUE(owner_id, identity_key, server_id)
+                )
+            """))
+        if _table_exists(conn, "behavior_profiles"):
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_behavior_profiles_owner_id ON behavior_profiles(owner_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_behavior_profiles_identity_key ON behavior_profiles(identity_key)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_behavior_profiles_user_id ON behavior_profiles(user_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_behavior_profiles_server_id ON behavior_profiles(server_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_behavior_profiles_status ON behavior_profiles(status)"))
 
         if _table_exists(conn, "alerts"):
             conn.execute(text("ALTER TABLE alerts ADD COLUMN IF NOT EXISTS server_id VARCHAR(36)"))
